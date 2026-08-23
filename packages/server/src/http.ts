@@ -201,7 +201,44 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json({ ended: true });
   }
 
+  if (request.method === "GET" && path === "/app.js") {
+    return appScript();
+  }
+
+  // A room link is /<roomId>. The shell is served for every id; the
+  // client shows "room not found" when the state fetch says so.
+  if (request.method === "GET" && /^\/[A-Za-z0-9]+$/.test(path)) {
+    return new Response(Bun.file(webPath("public/index.html")), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+
   return json({ error: "not_found" }, 404);
+}
+
+function webPath(relative: string): string {
+  return new URL(`../../web/${relative}`, import.meta.url).pathname;
+}
+
+let appBundle: string | null = null;
+
+// The client is TypeScript; Bun bundles it in memory on the first
+// request and the result is reused for the life of the process.
+async function appScript(): Promise<Response> {
+  if (appBundle === null) {
+    const build = await Bun.build({
+      entrypoints: [webPath("src/app.ts")],
+      target: "browser",
+      minify: false,
+    });
+    if (!build.success) {
+      return json({ error: "build_failed" }, 500);
+    }
+    appBundle = await build.outputs[0]!.text();
+  }
+  return new Response(appBundle, {
+    headers: { "content-type": "text/javascript; charset=utf-8" },
+  });
 }
 
 const POLL_HEARTBEAT_MS = 15_000;
