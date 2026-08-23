@@ -227,7 +227,10 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   // A room link is /<roomId>. The shell is served for every id; the
   // client shows "room not found" when the state fetch says so.
   if (request.method === "GET" && /^\/[A-Za-z0-9]+$/.test(path)) {
-    return new Response(Bun.file(webPath("public/index.html")), {
+    const html = embeddedAssets
+      ? embeddedAssets.indexHtml
+      : Bun.file(webPath("public/index.html"));
+    return new Response(html, {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
@@ -239,11 +242,29 @@ function webPath(relative: string): string {
   return new URL(`../../web/${relative}`, import.meta.url).pathname;
 }
 
+// The compiled binary has no web sources on disk; its entry injects
+// the assets it carries, and the disk paths are never touched.
+export interface WebAssets {
+  indexHtml: string;
+  appJs: string;
+}
+
+let embeddedAssets: WebAssets | null = null;
+
+export function setEmbeddedAssets(assets: WebAssets): void {
+  embeddedAssets = assets;
+}
+
 let appBundle: string | null = null;
 
 // The client is TypeScript; Bun bundles it in memory on the first
 // request and the result is reused for the life of the process.
 async function appScript(): Promise<Response> {
+  if (embeddedAssets) {
+    return new Response(embeddedAssets.appJs, {
+      headers: { "content-type": "text/javascript; charset=utf-8" },
+    });
+  }
   if (appBundle === null) {
     const build = await Bun.build({
       entrypoints: [webPath("src/app.ts")],
