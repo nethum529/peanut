@@ -103,7 +103,8 @@ export class RoomError extends Error {
       | "bad_agent_token"
       | "empty_flush"
       | "room_ended"
-      | "round_pending",
+      | "round_pending"
+      | "bad_ack",
     message: string,
   ) {
     super(message);
@@ -342,13 +343,13 @@ export class RoomStore {
     return room;
   }
 
-  // Destructive take: the caller owns delivery and must restoreRound if the
-  // connection dies before the payload is written out.
-  takeRound(roomId: string, token: string | undefined): AgentPollResult {
+  // Delivery is at-least-once: a poll only reads the pending round, and
+  // the agent must acknowledge it before the room accepts a new flush.
+  // A round lost on the wire is simply delivered again on the next poll.
+  peekRound(roomId: string, token: string | undefined): AgentPollResult {
     const room = this.agent(roomId, token);
     const pending = room.pendingRound;
     if (pending) {
-      room.pendingRound = null;
       return {
         status: "round",
         round: pending.number,
@@ -369,14 +370,20 @@ export class RoomStore {
     return { status: "waiting" };
   }
 
-  restoreRound(roomId: string, token: string | undefined, result: AgentPollResult): void {
+  // The agent confirms it holds the named round; only then can the room
+  // flush again.
+  ackRound(roomId: string, token: string | undefined, roundNumber: number): void {
     const room = this.agent(roomId, token);
-    if (result.status !== "round") return;
-    // Only restore when nothing newer was flushed meanwhile; a newer pending
-    // round supersedes the lost one.
     if (!room.pendingRound) {
-      room.pendingRound = room.rounds.find((r) => r.number === result.round) ?? null;
+      // A retried ack whose first response was lost must not fail.
+      if (room.rounds.some((round) => round.number === roundNumber)) return;
+      throw new RoomError("bad_ack", "there is no pending round with that number");
     }
+    if (room.pendingRound.number !== roundNumber) {
+      throw new RoomError("bad_ack", "the pending round has a different number");
+    }
+    room.pendingRound = null;
+    this.wake(room.id);
   }
 
   // The agent names the round it is answering; without a number the reply

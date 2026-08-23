@@ -195,6 +195,16 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json({ replied: true }, 201);
   }
 
+  const ackMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/ack$/);
+  if (request.method === "POST" && ackMatch) {
+    const body = await readJson(request);
+    if (!Number.isInteger(body.round)) {
+      throw new RoomError("bad_instruction", "round must be an integer");
+    }
+    store.ackRound(ackMatch[1]!, bearerToken(request), body.round as number);
+    return json({ acked: true });
+  }
+
   const agentEndMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/end$/);
   if (request.method === "POST" && agentEndMatch) {
     store.endByAgent(agentEndMatch[1]!, bearerToken(request));
@@ -255,8 +265,9 @@ function sleep(ms: number): Promise<void> {
 
 // Long-poll for the agent. With ?timeoutMs= the request resolves to
 // {status:"waiting"} at the deadline. Without it the response streams a
-// heartbeat space until a round or the end of the session arrives, and a
-// take that can not be written back to the client is restored.
+// heartbeat space until a round or the end of the session arrives. A
+// poll never consumes the round; the agent acknowledges it separately,
+// so a delivery lost on the wire repeats on the next poll.
 async function agentPoll(
   request: Request,
   store: RoomStore,
@@ -268,14 +279,8 @@ async function agentPoll(
   const timeoutMs =
     timeoutParam === null ? null : Math.max(0, Math.min(Number(timeoutParam) || 0, 2147483647));
 
-  const immediate = store.takeRound(roomId, token);
-  if (immediate.status !== "waiting") {
-    if (request.signal.aborted) {
-      store.restoreRound(roomId, token, immediate);
-      return json({ status: "waiting" });
-    }
-    return json(immediate);
-  }
+  const immediate = store.peekRound(roomId, token);
+  if (immediate.status !== "waiting") return json(immediate);
 
   if (timeoutMs !== null) {
     const deadline = Date.now() + timeoutMs;
@@ -288,12 +293,8 @@ async function agentPoll(
       } finally {
         waiter.dispose();
       }
-      const result = store.takeRound(roomId, token);
+      const result = store.peekRound(roomId, token);
       if (result.status === "waiting") continue;
-      if (request.signal.aborted) {
-        store.restoreRound(roomId, token, result);
-        return json({ status: "waiting" });
-      }
       return json(result);
     }
   }
@@ -324,12 +325,8 @@ async function agentPoll(
             finish();
             return;
           }
-          const result = store.takeRound(roomId, token);
+          const result = store.peekRound(roomId, token);
           if (result.status === "waiting") continue;
-          if (closed || request.signal.aborted) {
-            store.restoreRound(roomId, token, result);
-            return;
-          }
           controller.enqueue(encoder.encode(JSON.stringify(result)));
           finish();
           controller.close();
@@ -363,6 +360,7 @@ function statusFor(code: RoomError["code"]): number {
       return 403;
     case "room_ended":
     case "round_pending":
+    case "bad_ack":
       return 409;
   }
 }
