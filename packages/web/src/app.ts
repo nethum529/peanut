@@ -49,12 +49,12 @@ function showJoinDialog(roomId: string): void {
   const input = el("input");
   input.placeholder = "Your name";
   input.maxLength = 40;
-  input.autofocus = true;
   const button = el("button", undefined, "Join");
   const error = el("p", "error");
   form.append(input, button, error);
   box.append(form);
   root.append(box);
+  input.focus();
 
   form.onsubmit = async (event) => {
     event.preventDefault();
