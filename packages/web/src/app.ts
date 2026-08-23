@@ -54,8 +54,10 @@ const POLL_MS = 2000;
 
 let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-// Stamp mode lives outside render, so a state refresh keeps it on.
-let stampMode = false;
+// Stamp mode lives outside render, so a state refresh keeps the
+// current choice. It starts on: block stamping is the main gesture,
+// and text selection pinning is one toggle away.
+let stampMode = true;
 // The host's chosen verdict also survives the re-renders between
 // choosing and pressing Send.
 let pendingVerdict = "";
