@@ -1,5 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
+import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
 // The peanut CLI. Each invocation blocks until the next round or the
 // final verdict, prints it, and exits. The room lives in a session
@@ -22,6 +23,7 @@ interface Session {
   // Set only when this CLI started the server, so only then is the
   // server stopped at the end of the review.
   serverPid?: number;
+  tunnelPid?: number;
 }
 
 interface Flags {
@@ -29,14 +31,21 @@ interface Flags {
   named: Map<string, string>;
 }
 
+const BOOLEAN_FLAGS = new Set(["tunnel"]);
+
 function parseArgs(argv: string[]): Flags {
   const positional: string[] = [];
   const named = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg.startsWith("--")) {
-      named.set(arg.slice(2), argv[index + 1] ?? "");
-      index += 1;
+      const name = arg.slice(2);
+      if (BOOLEAN_FLAGS.has(name)) {
+        named.set(name, "true");
+      } else {
+        named.set(name, argv[index + 1] ?? "");
+        index += 1;
+      }
     } else {
       positional.push(arg);
     }
@@ -126,11 +135,12 @@ async function finishReview(
   code: number,
 ): Promise<never> {
   if (ended) {
-    if (session.serverPid) {
+    for (const pid of [session.serverPid, session.tunnelPid]) {
+      if (!pid) continue;
       try {
-        process.kill(session.serverPid);
+        process.kill(pid);
       } catch {
-        // The server was already gone; nothing to stop.
+        // The process was already gone; nothing to stop.
       }
     }
     await unlink(sessionPath(flags)).catch(() => {});
@@ -226,7 +236,22 @@ async function share(flags: Flags): Promise<never> {
   };
   await saveSession(flags, session);
 
-  console.log(`Review room is open. Share this link: ${server}/${body.roomId}`);
+  // The local link prints at once; the public link follows when the
+  // tunnel is up, so a slow tunnel never delays the room.
+  console.log(`Review room is open. Local link: ${server}/${body.roomId}`);
+  if (flags.named.has("tunnel")) {
+    const tunnel = await startTunnel(new URL(server).origin);
+    if (tunnel) {
+      const publicLink = `${tunnel.url}/${body.roomId}`;
+      const copied = await copyToClipboard(publicLink);
+      console.log(`Public link: ${publicLink}${copied ? " (copied to clipboard)" : ""}`);
+      console.log("The public link can take a minute to go live.");
+      session.tunnelPid = tunnel.pid;
+      await saveSession(flags, session);
+    } else {
+      console.log("The tunnel did not start (is cloudflared installed?). The local link still works.");
+    }
+  }
   console.log("Waiting for the first round...");
   return waitAndPrint(flags, session);
 }

@@ -23,6 +23,9 @@ When the user asks for a review of a file, run in the background:
 peanut share <file>
 ```
 
+Add --tunnel when a reviewer is not on this machine; the command
+then also prints a public link.
+
 The command prints the share link first. Read the partial output,
 relay the link to the user right away, then wait for the command
 to finish. It returns when the room sends the first round.
