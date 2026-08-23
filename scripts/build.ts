@@ -14,6 +14,10 @@ if (!web.success) {
   for (const message of web.logs) console.error(String(message));
   process.exit(1);
 }
+if (web.outputs.length !== 1) {
+  console.error(`Expected one client bundle, got ${web.outputs.length}.`);
+  process.exit(1);
+}
 await Bun.write(`${root}packages/web/dist/app.js.txt`, await web.outputs[0]!.text());
 await Bun.write(
   `${root}packages/web/dist/index.html.txt`,

@@ -105,7 +105,8 @@ async function serverAlive(url: string): Promise<boolean> {
 
 // In the compiled binary the modules live in an internal bunfs tree,
 // not on disk, so the server must start by re-executing the binary
-// itself. In the dev tree bun runs this source file again.
+// itself. In the dev tree bun runs this source file again. This
+// check is Unix only; a Windows build uses a different virtual path.
 const IS_COMPILED = Bun.main.includes("$bunfs");
 
 // Starts a detached peanut server and reads its url from the state
