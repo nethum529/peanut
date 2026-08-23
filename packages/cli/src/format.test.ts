@@ -44,6 +44,22 @@ describe("formatRound", () => {
     expect(text).not.toContain("peanut reply");
   });
 
+  test("a bare approve reads as no instructions plus the ended line", () => {
+    const text = formatRound({
+      status: "round",
+      round: 3,
+      instructions: [],
+      next_step: "",
+      verdict: "approve",
+      session_ended: true,
+      ended_by: "user",
+    });
+    expect(text).toContain("No new instructions.");
+    expect(text).toContain("Verdict: approve");
+    expect(text).toContain("The review has ended (by user).");
+    expect(text).not.toContain("peanut reply");
+  });
+
   test("a bare open round says there are no instructions", () => {
     const text = formatRound({
       status: "round",

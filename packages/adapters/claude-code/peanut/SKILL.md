@@ -48,9 +48,9 @@ The reply command returns the next round. Repeat this step until
 the review ends.
 
 A round can carry a verdict line and still ask for a reply. When
-the output ends with "Apply the instructions, then run: peanut
-reply", the review is still open, even if a line says Verdict:
-request_changes. Keep the loop going.
+the closing line prompts you to run peanut reply, the review is
+still open, even if a line says Verdict: request_changes and even
+if the round has no new instructions. Keep the loop going.
 
 ## The end of the review
 
