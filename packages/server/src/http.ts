@@ -10,14 +10,34 @@ export interface PeanutServer {
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
 
+interface RelayData {
+  roomId: string;
+  sessionId: string;
+}
+
 export function startServer(options: { port?: number } = {}): PeanutServer {
   const store = new RoomStore();
+  // One set of live sockets per room. The relay never decodes frames; it
+  // only fans them out to the other members of the same room.
+  const relayRooms = new Map<string, Set<Bun.ServerWebSocket<RelayData>>>();
 
-  const server = Bun.serve({
+  const server = Bun.serve<RelayData>({
     port: options.port ?? 0,
     hostname: "127.0.0.1",
-    async fetch(request) {
+    async fetch(request, bunServer) {
       try {
+        const relayMatch = new URL(request.url).pathname.match(/^\/api\/rooms\/([^/]+)\/relay$/);
+        if (relayMatch) {
+          const roomId = relayMatch[1]!;
+          // The same cookie gate as the HTTP API: no participant session,
+          // no socket.
+          const participant = store.participant(roomId, sessionFromCookie(request, roomId));
+          const upgraded = bunServer.upgrade(request, {
+            data: { roomId, sessionId: participant.sessionId },
+          });
+          if (upgraded) return undefined as unknown as Response;
+          return json({ error: "upgrade_failed" }, 400);
+        }
         return await route(request, store);
       } catch (error) {
         if (error instanceof RoomError) {
@@ -25,6 +45,26 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
         }
         throw error;
       }
+    },
+    websocket: {
+      open(ws) {
+        const set = relayRooms.get(ws.data.roomId) ?? new Set();
+        relayRooms.set(ws.data.roomId, set);
+        set.add(ws);
+      },
+      message(ws, message) {
+        const set = relayRooms.get(ws.data.roomId);
+        if (!set) return;
+        for (const peer of set) {
+          if (peer !== ws) peer.send(message);
+        }
+      },
+      close(ws) {
+        const set = relayRooms.get(ws.data.roomId);
+        if (!set) return;
+        set.delete(ws);
+        if (set.size === 0) relayRooms.delete(ws.data.roomId);
+      },
     },
   });
 
