@@ -164,6 +164,8 @@
         background: color-mix(in srgb, var(--accent) 8%, transparent);
         cursor: pointer;
       }
+      /* Keep .stamped after .stamp-hover: equal specificity, and a
+         stamped block under the cursor must win the author color. */
       .stamped {
         outline: 2px solid;
         outline-offset: 4px;
