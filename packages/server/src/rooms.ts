@@ -282,7 +282,10 @@ export class RoomStore {
       throw new RoomError("round_pending", "the agent has not picked up the previous round yet");
     }
     const instructions = [...room.instructions.values()].sort((a, b) => a.pinnedAt - b.pinnedAt);
-    if (instructions.length === 0) {
+    // A verdict alone is a valid round: it lets the host approve or
+    // request changes empty handed. Without a verdict an empty flush
+    // carries nothing and stays refused.
+    if (instructions.length === 0 && !input.verdict) {
       throw new RoomError("empty_flush", "there are no pinned instructions to send");
     }
     const round: Round = {

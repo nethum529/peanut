@@ -33,6 +33,9 @@ function anchorContext(anchor: WireInstruction["anchor"]): string {
 export function formatRound(round: WireRound): string {
   const lines: string[] = [];
   lines.push(`== Round ${round.round} ==`);
+  if (round.instructions.length === 0) {
+    lines.push("No new instructions.");
+  }
   round.instructions.forEach((instruction, index) => {
     lines.push(`${index + 1}. [${instruction.author.name}] ${instruction.words}`);
     const context = anchorContext(instruction.anchor);
@@ -42,6 +45,8 @@ export function formatRound(round: WireRound): string {
   if (round.verdict) lines.push(`Verdict: ${round.verdict}`);
   if (round.session_ended) {
     lines.push(`The review has ended (by ${round.ended_by ?? "user"}).`);
+  } else if (round.instructions.length === 0) {
+    lines.push(`Answer with: peanut reply "<your answer>"`);
   } else {
     lines.push(`Apply the instructions, then run: peanut reply "<what you did>"`);
   }
