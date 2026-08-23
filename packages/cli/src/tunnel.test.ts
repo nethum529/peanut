@@ -25,23 +25,51 @@ describe("startTunnel failure", () => {
     const savedPath = process.env.PATH;
     process.env.PATH = "/nonexistent-peanut-path";
     try {
-      expect(await startTunnel(1, 1000)).toBeNull();
+      expect(await startTunnel("http://127.0.0.1:1", 1000)).toBeNull();
     } finally {
       process.env.PATH = savedPath;
     }
   });
 
-  test("returns null when no url appears before the deadline", async () => {
-    // A port with nothing behind it still lets cloudflared start, but
-    // with PATH pointed at a stub that prints no url, the deadline
-    // must fire and the child must be reaped.
+  test("kills the child when no url appears before the deadline", async () => {
+    // The stub prints no url and records the TERM signal in a marker
+    // file, so the test can prove the child was reaped.
     const stubDir = `${process.env.TMPDIR ?? "/tmp"}/peanut-tunnel-stub-${process.pid}`;
-    await Bun.write(`${stubDir}/cloudflared`, "#!/bin/sh\necho quiet >&2\nsleep 30\n");
+    const marker = `${stubDir}/killed`;
+    await Bun.write(
+      `${stubDir}/cloudflared`,
+      `#!/bin/sh\ntrap 'echo yes > ${marker}; exit 0' TERM\necho quiet >&2\nwhile true; do sleep 1; done\n`,
+    );
     await Bun.spawn(["chmod", "+x", `${stubDir}/cloudflared`]).exited;
     const savedPath = process.env.PATH;
     process.env.PATH = stubDir;
     try {
-      expect(await startTunnel(1, 500)).toBeNull();
+      expect(await startTunnel("http://127.0.0.1:1", 500)).toBeNull();
+      let killed = false;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (await Bun.file(marker).exists()) {
+          killed = true;
+          break;
+        }
+        await Bun.sleep(100);
+      }
+      expect(killed).toBe(true);
+    } finally {
+      process.env.PATH = savedPath;
+      await Bun.spawn(["rm", "-rf", stubDir]).exited;
+    }
+  });
+
+  test("returns null fast when the child exits at once", async () => {
+    const stubDir = `${process.env.TMPDIR ?? "/tmp"}/peanut-tunnel-exit-${process.pid}`;
+    await Bun.write(`${stubDir}/cloudflared`, "#!/bin/sh\necho bad flag >&2\nexit 1\n");
+    await Bun.spawn(["chmod", "+x", `${stubDir}/cloudflared`]).exited;
+    const savedPath = process.env.PATH;
+    process.env.PATH = stubDir;
+    const before = Date.now();
+    try {
+      expect(await startTunnel("http://127.0.0.1:1", 20_000)).toBeNull();
+      expect(Date.now() - before).toBeLessThan(5_000);
     } finally {
       process.env.PATH = savedPath;
       await Bun.spawn(["rm", "-rf", stubDir]).exited;
@@ -49,7 +77,10 @@ describe("startTunnel failure", () => {
   });
 });
 
-describe.skipIf(!Bun.which("cloudflared"))("real quick tunnel", () => {
+// A real quick tunnel needs the network and can take minutes to
+// provision, so it runs only on explicit request:
+//   PEANUT_TUNNEL_TEST=1 bun test tunnel
+describe.skipIf(!process.env.PEANUT_TUNNEL_TEST)("real quick tunnel", () => {
   let tunnel: Tunnel | null = null;
 
   afterAll(() => {
@@ -63,6 +94,7 @@ describe.skipIf(!Bun.which("cloudflared"))("real quick tunnel", () => {
   });
 
   test("the room page loads through the public url", async () => {
+    expect(Bun.which("cloudflared")).not.toBeNull();
     const server = startServer({ port: 0 });
     try {
       const created = await fetch(`${server.url}/api/rooms`, {
@@ -71,25 +103,25 @@ describe.skipIf(!Bun.which("cloudflared"))("real quick tunnel", () => {
       });
       const { roomId } = (await created.json()) as { roomId: string };
 
-      tunnel = await startTunnel(Number(new URL(server.url).port));
+      tunnel = await startTunnel(new URL(server.url).origin, 60_000);
       expect(tunnel).not.toBeNull();
 
-      // The edge can lag or refuse connections for a moment after
-      // the url prints.
+      // Edge registration and DNS can lag well after the url prints.
       let page: Response | null = null;
-      for (let attempt = 0; attempt < 10; attempt += 1) {
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
         try {
           page = await fetch(`${tunnel!.url}/${roomId}`);
           if (page.ok) break;
         } catch {
           // Not reachable yet.
         }
-        await Bun.sleep(2000);
+        await Bun.sleep(3000);
       }
-      expect(page!.ok).toBe(true);
+      expect(page?.ok).toBe(true);
       expect(await page!.text()).toContain("<title>");
     } finally {
       server.stop();
     }
-  }, 40_000);
+  }, 200_000);
 });

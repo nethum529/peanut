@@ -240,12 +240,12 @@ async function share(flags: Flags): Promise<never> {
   // tunnel is up, so a slow tunnel never delays the room.
   console.log(`Review room is open. Local link: ${server}/${body.roomId}`);
   if (flags.named.has("tunnel")) {
-    const port = Number(new URL(server).port);
-    const tunnel = await startTunnel(port);
+    const tunnel = await startTunnel(new URL(server).origin);
     if (tunnel) {
       const publicLink = `${tunnel.url}/${body.roomId}`;
       const copied = await copyToClipboard(publicLink);
       console.log(`Public link: ${publicLink}${copied ? " (copied to clipboard)" : ""}`);
+      console.log("The public link can take a minute to go live.");
       session.tunnelPid = tunnel.pid;
       await saveSession(flags, session);
     } else {
