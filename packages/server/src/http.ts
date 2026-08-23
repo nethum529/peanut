@@ -24,6 +24,10 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
   const server = Bun.serve<RelayData>({
     port: options.port ?? 0,
     hostname: "127.0.0.1",
+    // The agent poll holds a silent request for its whole window and
+    // the relay idles between messages. The default ten second idle
+    // cut kills both, so idle connections are never closed here.
+    idleTimeout: 0,
     async fetch(request, bunServer) {
       try {
         const relayMatch = new URL(request.url).pathname.match(/^\/api\/rooms\/([^/]+)\/relay$/);
@@ -47,6 +51,9 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
       }
     },
     websocket: {
+      // Upgraded sockets have their own idle rule with a two minute
+      // default; a quiet room must not lose its relay either.
+      idleTimeout: 0,
       open(ws) {
         const set = relayRooms.get(ws.data.roomId) ?? new Set();
         relayRooms.set(ws.data.roomId, set);
