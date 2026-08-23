@@ -8,6 +8,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 //
 //   peanut share <file> [--title t] [--server url] [--session path]
 //   peanut reply <message> [--meta m] [--session path]
+//   peanut wait [--session path]
 //   peanut serve [--state path] [--port n]
 //
 // Exit codes: 0 for a delivered round or an approve, 1 for a review
@@ -174,15 +175,32 @@ async function ackRound(session: Session, round: number): Promise<void> {
   fail(`Could not acknowledge round ${round} (status ${lastStatus}). Run peanut reply to retry.`);
 }
 
+// A human round can take hours, so the wait must survive a dropped
+// socket. Only this many failures in a row mean the server is gone.
+const POLL_RETRY_LIMIT = 5;
+const POLL_RETRY_PAUSE_MS = 1_000;
+
 // Blocks until the next round or the end of the review, prints it,
 // acknowledges a round, and exits.
 async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
+  let failures = 0;
   while (true) {
-    const response = await api(
-      session,
-      "GET",
-      `/api/rooms/${session.roomId}/agent/poll?timeoutMs=${POLL_TIMEOUT_MS}`,
-    );
+    let response: Response;
+    try {
+      response = await api(
+        session,
+        "GET",
+        `/api/rooms/${session.roomId}/agent/poll?timeoutMs=${POLL_TIMEOUT_MS}`,
+      );
+    } catch {
+      failures += 1;
+      if (failures >= POLL_RETRY_LIMIT) {
+        fail(`Lost the connection to ${session.server}. Run peanut wait to keep waiting.`);
+      }
+      await Bun.sleep(POLL_RETRY_PAUSE_MS);
+      continue;
+    }
+    failures = 0;
     if (!response.ok) {
       fail(`The server refused the poll (${response.status}). The review may be gone.`);
     }
@@ -277,6 +295,14 @@ async function reply(flags: Flags): Promise<never> {
   return waitAndPrint(flags, session);
 }
 
+// Resumes blocking on an open review without sending anything. This
+// is the recovery path after a wait died on a connection error.
+async function wait(flags: Flags): Promise<never> {
+  const session = await loadSession(flags);
+  console.log("Waiting for the next round...");
+  return waitAndPrint(flags, session);
+}
+
 async function serve(flags: Flags): Promise<void> {
   const { startServer } = await import("../../server/src/http.ts");
   const port = Number(flags.named.get("port") ?? 0) || 0;
@@ -296,8 +322,9 @@ const command = flags.positional.shift();
 try {
   if (command === "share") await share(flags);
   else if (command === "reply") await reply(flags);
+  else if (command === "wait") await wait(flags);
   else if (command === "serve") await serve(flags);
-  else fail("Usage: peanut <share|reply|serve> ...");
+  else fail("Usage: peanut <share|reply|wait|serve> ...");
 } catch (error) {
   // A transport failure must not look like a review verdict. Exit 1
   // is reserved for a review that ended without approve.
