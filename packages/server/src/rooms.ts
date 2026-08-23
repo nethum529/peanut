@@ -1,4 +1,5 @@
 import { randomId } from "./ids.ts";
+import type { Anchor } from "./anchors.ts";
 
 export const COLOR_PALETTE = [
   "#626689",
@@ -18,6 +19,14 @@ export interface Participant {
   joinedAt: number;
 }
 
+export interface Instruction {
+  id: string;
+  words: string;
+  anchor: Anchor;
+  authorSessionId: string;
+  pinnedAt: number;
+}
+
 export interface Room {
   id: string;
   title: string;
@@ -26,6 +35,7 @@ export interface Room {
   status: "live" | "ended";
   endedBy?: "user" | "agent";
   participants: Map<string, Participant>;
+  instructions: Map<string, Instruction>;
 }
 
 export interface ParticipantView {
@@ -35,6 +45,15 @@ export interface ParticipantView {
   you: boolean;
 }
 
+export interface InstructionView {
+  id: string;
+  words: string;
+  anchor: Anchor;
+  author: { name: string; color: string; isHost: boolean };
+  mine: boolean;
+  pinnedAt: number;
+}
+
 export interface RoomStateView {
   id: string;
   title: string;
@@ -42,11 +61,18 @@ export interface RoomStateView {
   status: "live" | "ended";
   you: ParticipantView;
   participants: ParticipantView[];
+  instructions: InstructionView[];
 }
 
 export class RoomError extends Error {
   constructor(
-    readonly code: "room_not_found" | "not_a_participant" | "bad_name",
+    readonly code:
+      | "room_not_found"
+      | "not_a_participant"
+      | "bad_name"
+      | "bad_instruction"
+      | "instruction_not_found"
+      | "not_allowed",
     message: string,
   ) {
     super(message);
@@ -68,6 +94,7 @@ export class RoomStore {
       createdAt: Date.now(),
       status: "live",
       participants: new Map(),
+      instructions: new Map(),
     };
     const host = this.addParticipant(room, hostName, true);
     this.rooms.set(room.id, room);
@@ -120,7 +147,60 @@ export class RoomStore {
       participants: [...room.participants.values()]
         .sort((a, b) => a.joinedAt - b.joinedAt)
         .map(view),
+      instructions: [...room.instructions.values()]
+        .sort((a, b) => a.pinnedAt - b.pinnedAt)
+        .map((instruction) => {
+          const author = room.participants.get(instruction.authorSessionId);
+          return {
+            id: instruction.id,
+            words: instruction.words,
+            anchor: instruction.anchor,
+            author: {
+              name: author?.name ?? "Unknown",
+              color: author?.color ?? "#747b8c",
+              isHost: author?.isHost ?? false,
+            },
+            mine: instruction.authorSessionId === you.sessionId,
+            pinnedAt: instruction.pinnedAt,
+          };
+        }),
     };
+  }
+
+  pinInstruction(
+    roomId: string,
+    sessionId: string | undefined,
+    input: { words: string; anchor: Anchor },
+  ): Instruction {
+    const room = this.getRoom(roomId);
+    const author = this.participant(roomId, sessionId);
+    const words = input.words.trim();
+    if (!words || words.length > 2000) {
+      throw new RoomError("bad_instruction", "instruction words must be 1 to 2000 chars");
+    }
+    const instruction: Instruction = {
+      id: randomId(10),
+      words,
+      anchor: input.anchor,
+      authorSessionId: author.sessionId,
+      pinnedAt: Date.now(),
+    };
+    room.instructions.set(instruction.id, instruction);
+    return instruction;
+  }
+
+  // The author can withdraw their own instruction; the host can prune any.
+  removeInstruction(roomId: string, sessionId: string | undefined, instructionId: string): void {
+    const room = this.getRoom(roomId);
+    const remover = this.participant(roomId, sessionId);
+    const instruction = room.instructions.get(instructionId);
+    if (!instruction) {
+      throw new RoomError("instruction_not_found", `no instruction ${instructionId}`);
+    }
+    if (!remover.isHost && instruction.authorSessionId !== remover.sessionId) {
+      throw new RoomError("not_allowed", "only the author or the host can remove it");
+    }
+    room.instructions.delete(instructionId);
   }
 
   private addParticipant(room: Room, name: string, isHost: boolean): Participant {
