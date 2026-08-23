@@ -10,17 +10,30 @@
 export interface StampAnchor {
   type: "stamp";
   selector: string;
+  guard?: string;
+}
+
+// The guard is a normalized text prefix of the stamped element. It
+// travels with the anchor so a selector that drifts to a different
+// block is caught by content, the way a range quote catches drift.
+export function stampGuard(element: Element): string {
+  return (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
 // A stamp restores to its element, or null when the selector no
-// longer matches anything.
+// longer matches anything or the found text does not start with
+// the guard.
 export function restoreStamp(root: Element, anchor: StampAnchor): Element | null {
   if (!anchor.selector) return null;
+  let found: Element | null;
   try {
-    return root.querySelector(anchor.selector);
+    found = root.querySelector(anchor.selector);
   } catch {
     return null;
   }
+  if (!found) return null;
+  if (anchor.guard && !stampGuard(found).startsWith(anchor.guard)) return null;
+  return found;
 }
 
 export interface RangeAnchor {

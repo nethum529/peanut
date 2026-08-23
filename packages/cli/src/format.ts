@@ -5,7 +5,7 @@
 interface WireInstruction {
   words: string;
   author: { name: string };
-  anchor: { type: string; quote?: string; selector?: string };
+  anchor: { type: string; quote?: string; selector?: string; guard?: string };
 }
 
 export interface WireRound {
@@ -26,6 +26,7 @@ export interface WireEnded {
 
 function anchorContext(anchor: WireInstruction["anchor"]): string {
   if (anchor.type === "range" && anchor.quote) return `on the text: "${anchor.quote}"`;
+  if (anchor.type === "stamp" && anchor.guard) return `on the block: "${anchor.guard}"`;
   if (anchor.type === "stamp" && anchor.selector) return `on the block: ${anchor.selector}`;
   return "";
 }

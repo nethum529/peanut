@@ -83,6 +83,16 @@ describe("pinning", () => {
     expect(view.instructions[0].mine).toBe(true);
   });
 
+  test("a stamp guard round-trips and an over-long guard is refused", async () => {
+    const { roomId, hostCookie } = await setup();
+    const guarded = { type: "stamp", selector: "main > p", guard: "cap the backoff" };
+    await pin(roomId, hostCookie, "Do it here.", guarded);
+    const view = await state(roomId, hostCookie);
+    expect(view.instructions[0].anchor).toEqual(guarded);
+    const tooLong = { type: "stamp", selector: "main > p", guard: "g".repeat(201) };
+    expect((await pin(roomId, hostCookie, "ok", tooLong)).response.status).toBe(400);
+  });
+
   test("empty words or a broken anchor are refused", async () => {
     const { roomId, hostCookie } = await setup();
     expect((await pin(roomId, hostCookie, "   ")).response.status).toBe(400);

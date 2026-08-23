@@ -2,6 +2,7 @@ import {
   captureRange,
   restoreAnchor,
   restoreStamp,
+  stampGuard,
   selectorFor,
   type RangeAnchor,
   type StampAnchor,
@@ -522,7 +523,12 @@ function wireComposer(plan: HTMLElement, state: RoomStateView): void {
     event.stopPropagation();
     const selector = selectorFor(target, plan);
     if (!selector) return;
-    openComposer(state, { type: "stamp", selector }, target, "Pin an instruction to this block");
+    openComposer(
+      state,
+      { type: "stamp", selector, guard: stampGuard(target) },
+      target,
+      "Pin an instruction to this block",
+    );
   };
 }
 

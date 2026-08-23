@@ -17,6 +17,11 @@ describe("formatRound", () => {
           author: { name: "Sam" },
           anchor: { type: "stamp", selector: "p:nth-of-type(3)" },
         },
+        {
+          words: "Rework this block.",
+          author: { name: "Sam" },
+          anchor: { type: "stamp", selector: "p:nth-of-type(4)", guard: "cap the backoff" },
+        },
       ],
       next_step: "Reload the page after your edit.",
     });
@@ -25,6 +30,8 @@ describe("formatRound", () => {
     expect(text).toContain('on the text: "retry forever"');
     expect(text).toContain("2. [Sam] Split this section.");
     expect(text).toContain("on the block: p:nth-of-type(3)");
+    expect(text).toContain("3. [Sam] Rework this block.");
+    expect(text).toContain('on the block: "cap the backoff"');
     expect(text).toContain("Next step: Reload the page after your edit.");
     expect(text).toContain('peanut reply');
   });
