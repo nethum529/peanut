@@ -26,14 +26,27 @@ interface InstructionView {
   pinnedAt: number;
 }
 
+interface RoundView {
+  number: number;
+  instructions: { words: string; author: { name: string; color: string } }[];
+  flushedBy: string;
+  flushedAt: number;
+  nextStep: string;
+  verdict?: "approve" | "request_changes";
+  reply?: { message: string; meta?: string; repliedAt: number };
+}
+
 interface RoomStateView {
   id: string;
   title: string;
   content: string;
   status: string;
+  endedBy?: string;
+  verdict?: string;
   you: ParticipantView;
   participants: ParticipantView[];
   instructions: InstructionView[];
+  rounds: RoundView[];
 }
 
 const POLL_MS = 2000;
@@ -132,11 +145,12 @@ function render(state: RoomStateView): void {
     bar.append(stamp);
   }
 
+  const body = el("div", "body");
+  const left = el("div", "left");
   const plan = el("main", "plan");
   plan.id = "plan";
   plan.innerHTML = renderMarkdown(state.content);
-
-  root.append(bar, plan);
+  left.append(plan);
 
   const unanchored = renderInstructionMarks(plan, state);
   if (unanchored.length > 0) {
@@ -147,17 +161,171 @@ function render(state: RoomStateView): void {
       list.append(instructionRow(state, instruction, "li"));
     }
     box.append(list);
-    root.append(box);
+    left.append(box);
   }
+
+  body.append(left, renderSidebar(state, plan));
+  root.append(bar, body);
 
   if (state.status === "ended") {
     // Drop the selection handler from an earlier render, so no new
     // composer can open into an ended room.
     document.onmouseup = null;
-    root.append(el("div", "ended", "This session has ended."));
   } else {
     wireComposer(plan, state);
   }
+}
+
+function verdictLabel(verdict: string): string {
+  if (verdict === "approve") return "Approved";
+  if (verdict === "request_changes") return "Changes requested";
+  return "Ended";
+}
+
+async function postJson(path: string, payload: unknown): Promise<Response> {
+  return fetch(path, { method: "POST", body: JSON.stringify(payload) });
+}
+
+function renderSidebar(state: RoomStateView, plan: HTMLElement): HTMLElement {
+  const side = el("aside", "sidebar");
+  const ended = state.status === "ended";
+
+  if (ended) {
+    const row = el("div", "verdict-row");
+    row.append(el("strong", undefined, verdictLabel(state.verdict ?? "end")));
+    if (state.endedBy) row.append(el("span", undefined, `ended by ${state.endedBy}`));
+    side.append(row);
+  }
+
+  const rounds = el("section", "rounds");
+  rounds.append(el("h2", undefined, "Rounds"));
+  if (state.rounds.length === 0) {
+    rounds.append(el("p", "empty", "No rounds sent yet."));
+  }
+  for (const round of state.rounds) {
+    const box = el("div", "round");
+    box.append(el("h3", undefined, `Round ${round.number} by ${round.flushedBy}`));
+    const list = el("ul");
+    for (const instruction of round.instructions) {
+      const item = el("li");
+      const author = el("span", "author", instruction.author.name);
+      author.style.color = instruction.author.color;
+      item.append(author, el("span", "words", instruction.words));
+      list.append(item);
+    }
+    box.append(list);
+    if (round.verdict) box.append(el("p", "verdict", verdictLabel(round.verdict)));
+    if (round.reply) {
+      box.append(el("p", "reply", round.reply.message));
+    } else if (!ended) {
+      box.append(el("p", "empty", "Waiting for the agent."));
+    }
+    rounds.append(box);
+  }
+  side.append(rounds);
+
+  const stack = el("section", "stack");
+  stack.append(el("h2", undefined, "Pinned instructions"));
+  if (state.instructions.length === 0) {
+    stack.append(el("p", "empty", "Nothing pinned yet."));
+  } else {
+    const list = el("ul");
+    for (const instruction of state.instructions) {
+      list.append(instructionRow(state, instruction, "li"));
+    }
+    stack.append(list);
+  }
+  side.append(stack);
+
+  if (!ended && (state.you.isHost || state.you.canSend)) {
+    side.append(renderSendControls(state, plan));
+  }
+
+  if (!ended && state.you.isHost) {
+    side.append(renderPermissions(state));
+    const end = el("button", "end-button", "End session");
+    end.onclick = async () => {
+      await postJson(`/api/rooms/${state.id}/end`, {});
+      refresh(state.id);
+    };
+    side.append(end);
+  }
+
+  return side;
+}
+
+function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElement {
+  const box = el("section", "send");
+  box.append(el("h2", undefined, "Send the round"));
+  let verdict = "";
+  if (state.you.isHost) {
+    const select = el("select");
+    for (const [value, label] of [
+      ["", "No verdict"],
+      ["approve", "Approve"],
+      ["request_changes", "Request changes"],
+    ] as const) {
+      const option = el("option", undefined, label);
+      option.value = value;
+      select.append(option);
+    }
+    select.onchange = () => {
+      verdict = select.value;
+    };
+    box.append(select);
+  }
+  const send = el("button", "send-button", "Send");
+  const note = el("p", "note");
+  send.onclick = async () => {
+    // The current rendered plan is the round's DOM snapshot.
+    const response = await postJson(`/api/rooms/${state.id}/flush`, {
+      domSnapshot: plan.innerHTML,
+      nextStep: "",
+      ...(verdict ? { verdict } : {}),
+    });
+    if (response.ok) {
+      refresh(state.id);
+      return;
+    }
+    const body = await response.json().catch(() => ({}));
+    if (body.error === "round_pending") {
+      note.textContent = "The agent has not picked up the last round yet.";
+    } else if (body.error === "empty_flush") {
+      note.textContent = "Pin at least one instruction first.";
+    } else {
+      note.textContent = body.message ?? "Could not send.";
+    }
+  };
+  box.append(send, note);
+  return box;
+}
+
+function renderPermissions(state: RoomStateView): HTMLElement {
+  const box = el("section", "permissions");
+  box.append(el("h2", undefined, "Guest send permission"));
+  const guests = state.participants.filter((participant) => !participant.isHost);
+  if (guests.length === 0) {
+    box.append(el("p", "empty", "No guests yet."));
+    return box;
+  }
+  for (const guest of guests) {
+    const row = el("label", "grant-row");
+    const toggle = el("input");
+    toggle.type = "checkbox";
+    toggle.checked = guest.canSend;
+    toggle.onchange = async () => {
+      await postJson(`/api/rooms/${state.id}/grants`, {
+        participantId: guest.id,
+        canSend: toggle.checked,
+      });
+      refresh(state.id);
+    };
+    const name = el("span", undefined, guest.name);
+    name.style.color = guest.color;
+    row.append(toggle, name);
+    box.append(row);
+  }
+  return box;
 }
 
 // Marks every restorable instruction in the plan and returns the
@@ -222,7 +390,7 @@ function instructionRow(
   const author = el("span", "author", instruction.author.name);
   author.style.color = instruction.author.color;
   row.append(author, el("span", "words", instruction.words));
-  if (instruction.mine || state.you.isHost) {
+  if ((instruction.mine || state.you.isHost) && state.status !== "ended") {
     const remove = el("button", "remove", "Remove");
     remove.onclick = async () => {
       await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
