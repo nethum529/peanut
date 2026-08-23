@@ -1,3 +1,4 @@
+import { parseAnchor } from "./anchors.ts";
 import { RoomError, RoomStore, type Participant } from "./rooms.ts";
 
 export interface PeanutServer {
@@ -20,9 +21,7 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
         return await route(request, store);
       } catch (error) {
         if (error instanceof RoomError) {
-          const status =
-            error.code === "room_not_found" ? 404 : error.code === "bad_name" ? 400 : 403;
-          return json({ error: error.code, message: error.message }, status);
+          return json({ error: error.code, message: error.message }, statusFor(error.code));
         }
         throw error;
       }
@@ -73,7 +72,41 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json(store.stateFor(roomId, participant.sessionId));
   }
 
+  const pinMatch = path.match(/^\/api\/rooms\/([^/]+)\/instructions$/);
+  if (request.method === "POST" && pinMatch) {
+    const roomId = pinMatch[1]!;
+    const body = await readJson(request);
+    const anchor = parseAnchor(body.anchor);
+    if (!anchor) throw new RoomError("bad_instruction", "a valid anchor is required");
+    const instruction = store.pinInstruction(roomId, sessionFromCookie(request, roomId), {
+      words: stringField(body, "words"),
+      anchor,
+    });
+    return json({ id: instruction.id }, 201);
+  }
+
+  const removeMatch = path.match(/^\/api\/rooms\/([^/]+)\/instructions\/([^/]+)$/);
+  if (request.method === "DELETE" && removeMatch) {
+    const roomId = removeMatch[1]!;
+    store.removeInstruction(roomId, sessionFromCookie(request, roomId), removeMatch[2]!);
+    return json({ removed: true });
+  }
+
   return json({ error: "not_found" }, 404);
+}
+
+function statusFor(code: RoomError["code"]): number {
+  switch (code) {
+    case "room_not_found":
+    case "instruction_not_found":
+      return 404;
+    case "bad_name":
+    case "bad_instruction":
+      return 400;
+    case "not_a_participant":
+    case "not_allowed":
+      return 403;
+  }
 }
 
 // One cookie per room: the same browser can sit in several rooms at once
