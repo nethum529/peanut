@@ -47,8 +47,10 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
       content: stringField(body, "content"),
       hostName: stringField(body, "hostName") || "Host",
     });
+    // The agent token is returned once, to the creator only. It never
+    // appears in room state.
     return json(
-      { roomId: room.id, state: store.stateFor(room.id, host.sessionId) },
+      { roomId: room.id, agentToken: room.agentToken, state: store.stateFor(room.id, host.sessionId) },
       201,
       sessionCookie(room.id, host),
     );
@@ -92,7 +94,137 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json({ removed: true });
   }
 
+  const flushMatch = path.match(/^\/api\/rooms\/([^/]+)\/flush$/);
+  if (request.method === "POST" && flushMatch) {
+    const roomId = flushMatch[1]!;
+    const body = await readJson(request);
+    const round = store.flushRound(roomId, sessionFromCookie(request, roomId), {
+      domSnapshot: stringField(body, "domSnapshot"),
+      nextStep: stringField(body, "nextStep"),
+    });
+    return json({ round: round.number }, 201);
+  }
+
+  const endMatch = path.match(/^\/api\/rooms\/([^/]+)\/end$/);
+  if (request.method === "POST" && endMatch) {
+    store.endByUser(endMatch[1]!, sessionFromCookie(request, endMatch[1]!));
+    return json({ ended: true });
+  }
+
+  const pollMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/poll$/);
+  if (request.method === "GET" && pollMatch) {
+    return agentPoll(request, store, pollMatch[1]!, url);
+  }
+
+  const replyMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/reply$/);
+  if (request.method === "POST" && replyMatch) {
+    const body = await readJson(request);
+    store.agentReply(
+      replyMatch[1]!,
+      bearerToken(request),
+      stringField(body, "message"),
+      stringField(body, "meta") || undefined,
+    );
+    return json({ replied: true }, 201);
+  }
+
+  const agentEndMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/end$/);
+  if (request.method === "POST" && agentEndMatch) {
+    store.endByAgent(agentEndMatch[1]!, bearerToken(request));
+    return json({ ended: true });
+  }
+
   return json({ error: "not_found" }, 404);
+}
+
+const POLL_HEARTBEAT_MS = 15_000;
+
+function bearerToken(request: Request): string | undefined {
+  const header = request.headers.get("authorization") ?? "";
+  const match = header.match(/^Bearer\s+(\S+)$/i);
+  return match?.[1];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Long-poll for the agent. With ?timeoutMs= the request resolves to
+// {status:"waiting"} at the deadline. Without it the response streams a
+// heartbeat space until a round or the end of the session arrives, and a
+// take that can not be written back to the client is restored.
+async function agentPoll(
+  request: Request,
+  store: RoomStore,
+  roomId: string,
+  url: URL,
+): Promise<Response> {
+  const token = bearerToken(request);
+  const timeoutParam = url.searchParams.get("timeoutMs");
+  const timeoutMs =
+    timeoutParam === null ? null : Math.max(0, Math.min(Number(timeoutParam) || 0, 2147483647));
+
+  const immediate = store.takeRound(roomId, token);
+  if (immediate.status !== "waiting") {
+    if (request.signal.aborted) {
+      store.restoreRound(roomId, token, immediate);
+      return json({ status: "waiting" });
+    }
+    return json(immediate);
+  }
+
+  if (timeoutMs !== null) {
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || request.signal.aborted) return json({ status: "waiting" });
+      await Promise.race([store.waitForChange(roomId, request.signal), sleep(remaining)]);
+      const result = store.takeRound(roomId, token);
+      if (result.status === "waiting") continue;
+      if (request.signal.aborted) {
+        store.restoreRound(roomId, token, result);
+        return json({ status: "waiting" });
+      }
+      return json(result);
+    }
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      let closed = false;
+      const heartbeat = setInterval(() => {
+        if (!closed) controller.enqueue(encoder.encode(" "));
+      }, POLL_HEARTBEAT_MS);
+      const finish = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+      };
+      const onAbort = () => finish();
+      request.signal.addEventListener("abort", onAbort, { once: true });
+      (async () => {
+        while (!closed) {
+          await store.waitForChange(roomId, request.signal);
+          if (request.signal.aborted) {
+            finish();
+            return;
+          }
+          const result = store.takeRound(roomId, token);
+          if (result.status === "waiting") continue;
+          if (closed || request.signal.aborted) {
+            store.restoreRound(roomId, token, result);
+            return;
+          }
+          controller.enqueue(encoder.encode(JSON.stringify(result)));
+          finish();
+          controller.close();
+          return;
+        }
+      })().catch(() => finish());
+    },
+  });
+  return new Response(stream, { status: 200, headers: JSON_HEADERS });
 }
 
 function statusFor(code: RoomError["code"]): number {
@@ -102,10 +234,15 @@ function statusFor(code: RoomError["code"]): number {
       return 404;
     case "bad_name":
     case "bad_instruction":
+    case "empty_flush":
       return 400;
+    case "bad_agent_token":
+      return 401;
     case "not_a_participant":
     case "not_allowed":
       return 403;
+    case "room_ended":
+      return 409;
   }
 }
 
