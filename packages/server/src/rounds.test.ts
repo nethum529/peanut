@@ -148,6 +148,16 @@ describe("flush", () => {
 });
 
 describe("agent poll", () => {
+  test("a quiet poll outlives the ten second idle cut", async () => {
+    // Bun.serve closes idle requests after ten seconds by default,
+    // which used to kill every silent long poll mid window.
+    const { roomId, agentToken } = await setup();
+    const started = Date.now();
+    const { body } = await poll(roomId, agentToken, 12_000);
+    expect(body.status).toBe("waiting");
+    expect(Date.now() - started).toBeGreaterThan(11_000);
+  }, 20_000);
+
   test("a flushed round reaches the poll with snapshot and next_step", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "Cap the backoff.");
