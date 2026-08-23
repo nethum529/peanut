@@ -4,6 +4,9 @@
 export interface StampAnchor {
   type: "stamp";
   selector: string;
+  // A normalized text prefix of the stamped element. Restore in the
+  // browser refuses an element whose text does not start with it.
+  guard?: string;
 }
 
 export interface RangeAnchor {
@@ -31,8 +34,12 @@ export function parseAnchor(raw: unknown): Anchor | null {
   if (!selector || selector.length > 1000) return null;
 
   switch (value.type) {
-    case "stamp":
-      return { type: "stamp", selector };
+    case "stamp": {
+      const guard = value.guard;
+      if (guard !== undefined && typeof guard !== "string") return null;
+      if (typeof guard === "string" && guard.length > 200) return null;
+      return { type: "stamp", selector, ...(guard ? { guard } : {}) };
+    }
     case "range": {
       const nodePath = value.nodePath;
       if (

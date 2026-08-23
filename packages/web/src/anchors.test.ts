@@ -5,6 +5,7 @@ import {
   restoreAnchor,
   restoreStamp,
   selectorFor,
+  stampGuard,
   type RangeAnchor,
 } from "./anchors.ts";
 
@@ -66,6 +67,44 @@ describe("restoreStamp", () => {
     expect(restoreStamp(plan, { type: "stamp", selector: "h2" })).toBeNull();
     expect(restoreStamp(plan, { type: "stamp", selector: ":::nope" })).toBeNull();
     expect(restoreStamp(plan, { type: "stamp", selector: "" })).toBeNull();
+  });
+
+  test("a matching guard restores and a drifted block is refused", () => {
+    const plan = setup("<p>keep the retry loop</p><p>cap the backoff</p>");
+    const target = plan.querySelectorAll("p")[1]!;
+    const anchor = {
+      type: "stamp" as const,
+      selector: selectorFor(target, plan),
+      guard: stampGuard(target),
+    };
+    expect(anchor.guard).toBe("cap the backoff");
+    expect(restoreStamp(plan, anchor)).toBe(target);
+    // An edit removed the first paragraph; the selector now lands on
+    // different content and the guard must refuse it.
+    const drifted = setup("<p>keep the retry loop</p>");
+    expect(restoreStamp(drifted, anchor)).toBeNull();
+  });
+
+  test("a guard tolerates trailing growth but not a rewrite", () => {
+    const plan = setup("<p>cap the backoff</p>");
+    const anchor = { type: "stamp" as const, selector: "p:nth-of-type(1)", guard: "cap the backoff" };
+    const grown = setup("<p>cap the backoff at 30s</p>");
+    expect(restoreStamp(grown, anchor)).not.toBeNull();
+    const rewritten = setup("<p>drop the backoff</p>");
+    expect(restoreStamp(rewritten, anchor)).toBeNull();
+    expect(restoreStamp(plan, anchor)).not.toBeNull();
+  });
+
+  test("an anchor without a guard restores by selector alone", () => {
+    const plan = setup("<p>anything</p>");
+    expect(restoreStamp(plan, { type: "stamp", selector: "p:nth-of-type(1)" })).not.toBeNull();
+  });
+
+  test("stampGuard normalizes whitespace and caps the length", () => {
+    const plan = setup(`<p>  a\n   lot   of\tspace ${"x".repeat(200)}</p>`);
+    const guard = stampGuard(plan.querySelector("p")!);
+    expect(guard.startsWith("a lot of space")).toBe(true);
+    expect(guard.length).toBe(80);
   });
 });
 
