@@ -105,6 +105,41 @@ describe("flush", () => {
     expect((await flush(roomId, hostCookie)).status).toBe(400);
   });
 
+  test("a bare approve flush ends the review and reaches the agent", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    const flushed = await flush(roomId, hostCookie, { verdict: "approve" });
+    expect(flushed.status).toBe(201);
+    const { body } = await poll(roomId, agentToken);
+    expect(body.status).toBe("round");
+    expect(body.instructions).toEqual([]);
+    expect(body.verdict).toBe("approve");
+    expect(body.session_ended).toBe(true);
+    const view = await state(roomId, hostCookie);
+    expect(view.status).toBe("ended");
+  });
+
+  test("a bare request_changes flush keeps the review open", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    const flushed = await flush(roomId, hostCookie, { verdict: "request_changes" });
+    expect(flushed.status).toBe(201);
+    const { body } = await poll(roomId, agentToken);
+    expect(body.status).toBe("round");
+    expect(body.instructions).toEqual([]);
+    expect(body.verdict).toBe("request_changes");
+    expect(body.session_ended).toBeFalsy();
+  });
+
+  test("a bare verdict flush from a granted guest is refused", async () => {
+    const { roomId, hostCookie, guestCookie } = await setup();
+    const view = await state(roomId, guestCookie);
+    await fetch(`${server.url}/api/rooms/${roomId}/grants`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ participantId: view.you.id, canSend: true }),
+    });
+    expect((await flush(roomId, guestCookie, { verdict: "approve" })).status).toBe(403);
+  });
+
   test("an ungranted guest can not flush", async () => {
     const { roomId, guestCookie } = await setup();
     await pin(roomId, guestCookie, "Note.");

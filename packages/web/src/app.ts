@@ -303,7 +303,7 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
     if (body.error === "round_pending") {
       note.textContent = "The agent has not picked up the last round yet.";
     } else if (body.error === "empty_flush") {
-      note.textContent = "Pin at least one instruction first.";
+      note.textContent = "Pin an instruction or choose a verdict first.";
     } else {
       note.textContent = body.message ?? "Could not send.";
     }

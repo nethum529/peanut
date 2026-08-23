@@ -43,6 +43,20 @@ describe("formatRound", () => {
     expect(text).toContain("ended");
     expect(text).not.toContain("peanut reply");
   });
+
+  test("a bare open round says there are no instructions", () => {
+    const text = formatRound({
+      status: "round",
+      round: 2,
+      instructions: [],
+      next_step: "",
+      verdict: "request_changes",
+    });
+    expect(text).toContain("No new instructions.");
+    expect(text).toContain("Verdict: request_changes");
+    expect(text).toContain('Answer with: peanut reply "<your answer>"');
+    expect(text).not.toContain("Apply the instructions");
+  });
 });
 
 describe("formatEnded", () => {
