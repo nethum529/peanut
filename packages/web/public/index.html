@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Peanut</title>
+    <style>
+      :root {
+        --accent: #5a5f9e;
+        --ink: #2b2e3a;
+        --muted: #747b8c;
+        --line: #d9dce4;
+        --paper: #f5f6f9;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--paper);
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 20px;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+      }
+      .wordmark { font-weight: 700; color: var(--accent); }
+      .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .people { display: flex; gap: 6px; }
+      .person {
+        border: 2px solid var(--muted);
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 13px;
+        background: #fff;
+      }
+      .person.you { font-weight: 600; }
+      .plan {
+        max-width: 760px;
+        margin: 28px auto;
+        padding: 32px 40px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        line-height: 1.6;
+      }
+      .plan pre {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 12px;
+        overflow-x: auto;
+      }
+      .plan code { font-size: 0.92em; }
+      .plan a { color: var(--accent); }
+      .join, .notice {
+        max-width: 380px;
+        margin: 15vh auto;
+        padding: 32px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        text-align: center;
+      }
+      .join form { display: flex; flex-direction: column; gap: 12px; }
+      .join input {
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-size: 15px;
+      }
+      .join button {
+        padding: 10px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .error { color: #a33; min-height: 1em; margin: 0; }
+      .ended {
+        text-align: center;
+        color: var(--muted);
+        padding-bottom: 32px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
