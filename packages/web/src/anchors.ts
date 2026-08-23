@@ -7,6 +7,22 @@
 // the guard: when the text at the offsets no longer matches, restore
 // fails and the instruction is kept in the unanchored list.
 
+export interface StampAnchor {
+  type: "stamp";
+  selector: string;
+}
+
+// A stamp restores to its element, or null when the selector no
+// longer matches anything.
+export function restoreStamp(root: Element, anchor: StampAnchor): Element | null {
+  if (!anchor.selector) return null;
+  try {
+    return root.querySelector(anchor.selector);
+  } catch {
+    return null;
+  }
+}
+
 export interface RangeAnchor {
   type: "range";
   selector: string;
