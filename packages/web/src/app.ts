@@ -253,15 +253,18 @@ function clearHover(): void {
   hovered = null;
 }
 
-// The stamp target is the element under the pointer, lifted out of a
-// range mark so a stamp never targets the highlight span itself.
+// Inline markup inside a block. A stamp always targets the block, so
+// the pointer never jitters between a paragraph and its bold or link
+// fragments, and a highlight span is never a target.
+const INLINE_TAGS = new Set(["MARK", "STRONG", "EM", "CODE", "A"]);
+
 function stampTarget(plan: HTMLElement, node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null;
   let element: Element | null = node;
-  while (element && (element.tagName === "MARK" || element === plan)) {
-    element = element === plan ? null : element.parentElement;
+  while (element && element !== plan && INLINE_TAGS.has(element.tagName)) {
+    element = element.parentElement;
   }
-  if (!element || !plan.contains(element)) return null;
+  if (!element || element === plan || !plan.contains(element)) return null;
   return element as HTMLElement;
 }
 
