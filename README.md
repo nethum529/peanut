@@ -31,7 +31,15 @@ bun install
 bun test
 ```
 
-Distribution is by GitHub releases only. Never published to npm.
+Build the single binary with:
+
+```
+bun run build
+```
+
+The result is `dist/peanut`, a standalone executable with the web
+assets embedded. Distribution is by GitHub releases only. Never
+published to npm.
 
 ## License
 

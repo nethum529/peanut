@@ -103,14 +103,19 @@ async function serverAlive(url: string): Promise<boolean> {
   }
 }
 
+// In the compiled binary the modules live in an internal bunfs tree,
+// not on disk, so the server must start by re-executing the binary
+// itself. In the dev tree bun runs this source file again.
+const IS_COMPILED = Bun.main.includes("$bunfs");
+
 // Starts a detached peanut server and reads its url from the state
 // file it writes once it listens.
 async function startDetachedServer(): Promise<{ url: string; pid: number }> {
   const stateFile = `${process.env.TMPDIR ?? "/tmp"}/peanut-server-${process.pid}-${Math.random().toString(36).slice(2)}.json`;
-  const child = Bun.spawn(
-    [process.execPath, new URL("./main.ts", import.meta.url).pathname, "serve", "--state", stateFile],
-    { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
-  );
+  const command = IS_COMPILED
+    ? [process.execPath, "serve", "--state", stateFile]
+    : [process.execPath, new URL("./main.ts", import.meta.url).pathname, "serve", "--state", stateFile];
+  const child = Bun.spawn(command, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
   child.unref();
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
