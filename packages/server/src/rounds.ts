@@ -19,6 +19,8 @@ export interface Round {
   flushedAt: number;
   domSnapshot: string;
   nextStep: string;
+  // The verdict the host attached to this flush, if any.
+  verdict?: "approve" | "request_changes";
   reply?: RoundReply;
 }
 
@@ -26,13 +28,14 @@ export interface Round {
 // ended state is reported, so a send-and-end still reaches the agent.
 export type AgentPollResult =
   | { status: "waiting" }
-  | { status: "ended"; ended_by: "user" | "agent" }
+  | { status: "ended"; ended_by: "user" | "agent"; verdict?: "approve" | "request_changes" | "end" }
   | {
       status: "round";
       round: number;
       instructions: RoundInstruction[];
       dom_snapshot: string;
       next_step: string;
+      verdict?: "approve" | "request_changes";
       session_ended?: true;
       ended_by?: "user" | "agent";
     };

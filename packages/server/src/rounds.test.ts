@@ -251,7 +251,7 @@ describe("reply and end", () => {
     });
     expect(ended.status).toBe(200);
     const { body } = await pending;
-    expect(body).toEqual({ status: "ended", ended_by: "user" });
+    expect(body).toEqual({ status: "ended", ended_by: "user", verdict: "end" });
   });
 
   test("a guest can not end the session", async () => {
@@ -299,7 +299,7 @@ describe("reply and end", () => {
     expect(first.body.session_ended).toBe(true);
     expect(first.body.ended_by).toBe("user");
     const second = await poll(roomId, agentToken, 100);
-    expect(second.body).toEqual({ status: "ended", ended_by: "user" });
+    expect(second.body).toEqual({ status: "ended", ended_by: "user", verdict: "end" });
   });
 
   test("flushing into an ended room is refused", async () => {
