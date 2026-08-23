@@ -91,6 +91,8 @@ describe("pinning", () => {
     expect(view.instructions[0].anchor).toEqual(guarded);
     const tooLong = { type: "stamp", selector: "main > p", guard: "g".repeat(201) };
     expect((await pin(roomId, hostCookie, "ok", tooLong)).response.status).toBe(400);
+    const notAString = { type: "stamp", selector: "main > p", guard: 5 };
+    expect((await pin(roomId, hostCookie, "ok", notAString)).response.status).toBe(400);
   });
 
   test("empty words or a broken anchor are refused", async () => {
