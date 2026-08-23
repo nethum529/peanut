@@ -51,6 +51,9 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
       }
     },
     websocket: {
+      // Upgraded sockets have their own idle rule with a two minute
+      // default; a quiet room must not lose its relay either.
+      idleTimeout: 0,
       open(ws) {
         const set = relayRooms.get(ws.data.roomId) ?? new Set();
         relayRooms.set(ws.data.roomId, set);
