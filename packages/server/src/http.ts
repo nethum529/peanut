@@ -82,6 +82,15 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
 
   if (request.method === "POST" && path === "/api/rooms") {
     const body = await readJson(request);
+    // A hostless room comes from the CLI: the agent holds the token and
+    // the first person who joins by link becomes the host.
+    if (body.hostless === true) {
+      const { room } = store.createRoom({
+        title: stringField(body, "title"),
+        content: stringField(body, "content"),
+      });
+      return json({ roomId: room.id, agentToken: room.agentToken }, 201);
+    }
     const { room, host } = store.createRoom({
       title: stringField(body, "title"),
       content: stringField(body, "content"),
@@ -90,9 +99,9 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     // The agent token is returned once, to the creator only. It never
     // appears in room state.
     return json(
-      { roomId: room.id, agentToken: room.agentToken, state: store.stateFor(room.id, host.sessionId) },
+      { roomId: room.id, agentToken: room.agentToken, state: store.stateFor(room.id, host!.sessionId) },
       201,
-      sessionCookie(room.id, host),
+      sessionCookie(room.id, host!),
     );
   }
 

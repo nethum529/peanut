@@ -114,11 +114,13 @@ export class RoomError extends Error {
 export class RoomStore {
   private rooms = new Map<string, Room>();
 
-  createRoom(input: { title: string; content: string; hostName: string }): {
+  // Without a hostName the room starts empty and the first joiner
+  // becomes the host. The CLI uses this shape: the agent creates the
+  // room, and the person who opens the link runs it.
+  createRoom(input: { title: string; content: string; hostName?: string }): {
     room: Room;
-    host: Participant;
+    host: Participant | null;
   } {
-    const hostName = normalizeName(input.hostName);
     const room: Room = {
       id: randomId(),
       title: input.title.trim() || "Review",
@@ -131,7 +133,10 @@ export class RoomStore {
       rounds: [],
       pendingRound: null,
     };
-    const host = this.addParticipant(room, hostName, true);
+    const host =
+      input.hostName === undefined
+        ? null
+        : this.addParticipant(room, normalizeName(input.hostName), true);
     this.rooms.set(room.id, room);
     return { room, host };
   }
@@ -150,7 +155,7 @@ export class RoomStore {
       const existing = room.participants.get(input.sessionId);
       if (existing) return existing;
     }
-    return this.addParticipant(room, normalizeName(input.name), false);
+    return this.addParticipant(room, normalizeName(input.name), room.participants.size === 0);
   }
 
   participant(roomId: string, sessionId: string | undefined): Participant {
