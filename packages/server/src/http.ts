@@ -98,11 +98,33 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   if (request.method === "POST" && flushMatch) {
     const roomId = flushMatch[1]!;
     const body = await readJson(request);
+    const verdictField = stringField(body, "verdict");
+    if (verdictField && verdictField !== "approve" && verdictField !== "request_changes") {
+      throw new RoomError("bad_instruction", "verdict must be approve or request_changes");
+    }
     const round = store.flushRound(roomId, sessionFromCookie(request, roomId), {
       domSnapshot: stringField(body, "domSnapshot"),
       nextStep: stringField(body, "nextStep"),
+      ...(verdictField ? { verdict: verdictField as "approve" | "request_changes" } : {}),
     });
     return json({ round: round.number }, 201);
+  }
+
+  const grantMatch = path.match(/^\/api\/rooms\/([^/]+)\/grants$/);
+  if (request.method === "POST" && grantMatch) {
+    const roomId = grantMatch[1]!;
+    const body = await readJson(request);
+    const canSend = body.canSend;
+    if (typeof canSend !== "boolean") {
+      throw new RoomError("bad_instruction", "canSend must be true or false");
+    }
+    store.setSendGrant(
+      roomId,
+      sessionFromCookie(request, roomId),
+      stringField(body, "participantId"),
+      canSend,
+    );
+    return json({ granted: canSend });
   }
 
   const endMatch = path.match(/^\/api\/rooms\/([^/]+)\/end$/);

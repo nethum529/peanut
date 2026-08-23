@@ -13,12 +13,17 @@ export const COLOR_PALETTE = [
 
 export interface Participant {
   sessionId: string;
+  // The public handle other clients may see and target, e.g. for grants.
+  // The sessionId stays the secret credential.
+  publicId: string;
   name: string;
   color: string;
   isHost: boolean;
   canSend: boolean;
   joinedAt: number;
 }
+
+export type Verdict = "approve" | "request_changes" | "end";
 
 export interface Instruction {
   id: string;
@@ -35,6 +40,7 @@ export interface Room {
   createdAt: number;
   status: "live" | "ended";
   endedBy?: "user" | "agent";
+  verdict?: Verdict;
   participants: Map<string, Participant>;
   instructions: Map<string, Instruction>;
   agentToken: string;
@@ -45,9 +51,11 @@ export interface Room {
 }
 
 export interface ParticipantView {
+  id: string;
   name: string;
   color: string;
   isHost: boolean;
+  canSend: boolean;
   you: boolean;
 }
 
@@ -66,6 +74,7 @@ export interface RoundView {
   flushedBy: string;
   flushedAt: number;
   nextStep: string;
+  verdict?: "approve" | "request_changes";
   reply?: { message: string; meta?: string; repliedAt: number };
 }
 
@@ -75,6 +84,7 @@ export interface RoomStateView {
   content: string;
   status: "live" | "ended";
   endedBy?: "user" | "agent";
+  verdict?: Verdict;
   you: ParticipantView;
   participants: ParticipantView[];
   instructions: InstructionView[];
@@ -157,9 +167,11 @@ export class RoomStore {
     const room = this.getRoom(roomId);
     const you = this.participant(roomId, sessionId);
     const view = (p: Participant): ParticipantView => ({
+      id: p.publicId,
       name: p.name,
       color: p.color,
       isHost: p.isHost,
+      canSend: p.canSend,
       you: p.sessionId === you.sessionId,
     });
     return {
@@ -168,6 +180,7 @@ export class RoomStore {
       content: room.content,
       status: room.status,
       ...(room.endedBy ? { endedBy: room.endedBy } : {}),
+      ...(room.verdict ? { verdict: room.verdict } : {}),
       you: view(you),
       participants: [...room.participants.values()]
         .sort((a, b) => a.joinedAt - b.joinedAt)
@@ -197,6 +210,7 @@ export class RoomStore {
         flushedBy: round.flushedBy,
         flushedAt: round.flushedAt,
         nextStep: round.nextStep,
+        ...(round.verdict ? { verdict: round.verdict } : {}),
         ...(round.reply ? { reply: round.reply } : {}),
       })),
     };
@@ -243,13 +257,16 @@ export class RoomStore {
   flushRound(
     roomId: string,
     sessionId: string | undefined,
-    input: { domSnapshot?: string; nextStep?: string },
+    input: { domSnapshot?: string; nextStep?: string; verdict?: "approve" | "request_changes" },
   ): Round {
     const room = this.getRoom(roomId);
     const flusher = this.participant(roomId, sessionId);
     if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");
     if (!flusher.isHost && !flusher.canSend) {
       throw new RoomError("not_allowed", "only the host or a granted guest can send to the agent");
+    }
+    if (input.verdict && !flusher.isHost) {
+      throw new RoomError("not_allowed", "only the host can set a verdict");
     }
     // A flush can not overwrite an undelivered round; superseding it would
     // silently drop instructions the agent never saw.
@@ -278,12 +295,41 @@ export class RoomStore {
       flushedAt: Date.now(),
       domSnapshot: input.domSnapshot ?? "",
       nextStep: input.nextStep ?? "",
+      ...(input.verdict ? { verdict: input.verdict } : {}),
     };
     room.instructions.clear();
     room.rounds.push(round);
     room.pendingRound = round;
+    // An approve verdict concludes the review: the round still rides to the
+    // agent, with the ended state attached.
+    if (input.verdict) {
+      room.verdict = input.verdict;
+      if (input.verdict === "approve") {
+        room.status = "ended";
+        room.endedBy = "user";
+      }
+    }
     this.wake(room.id);
     return round;
+  }
+
+  // Grants are keyed by the guest's public id but recorded on the server
+  // against the session, never a shared token.
+  setSendGrant(
+    roomId: string,
+    sessionId: string | undefined,
+    participantId: string,
+    canSend: boolean,
+  ): void {
+    const room = this.getRoom(roomId);
+    const granter = this.participant(roomId, sessionId);
+    if (!granter.isHost) {
+      throw new RoomError("not_allowed", "only the host can grant send permission");
+    }
+    const target = [...room.participants.values()].find((p) => p.publicId === participantId);
+    if (!target) throw new RoomError("not_a_participant", `no participant ${participantId}`);
+    if (target.isHost) throw new RoomError("not_allowed", "the host grant can not change");
+    target.canSend = canSend;
   }
 
   agent(roomId: string, token: string | undefined): Room {
@@ -307,11 +353,16 @@ export class RoomStore {
         instructions: pending.instructions,
         dom_snapshot: pending.domSnapshot,
         next_step: pending.nextStep,
+        ...(pending.verdict ? { verdict: pending.verdict } : {}),
         ...(room.status === "ended" ? { session_ended: true as const, ended_by: room.endedBy } : {}),
       };
     }
     if (room.status === "ended") {
-      return { status: "ended", ended_by: room.endedBy ?? "agent" };
+      return {
+        status: "ended",
+        ended_by: room.endedBy ?? "agent",
+        ...(room.verdict ? { verdict: room.verdict } : {}),
+      };
     }
     return { status: "waiting" };
   }
@@ -358,6 +409,7 @@ export class RoomStore {
     if (room.status !== "ended") {
       room.status = "ended";
       room.endedBy = "user";
+      if (!room.verdict) room.verdict = "end";
     }
     this.wake(room.id);
   }
@@ -402,6 +454,7 @@ export class RoomStore {
   private addParticipant(room: Room, name: string, isHost: boolean): Participant {
     const participant: Participant = {
       sessionId: randomId(),
+      publicId: randomId(10),
       name,
       color: COLOR_PALETTE[room.participants.size % COLOR_PALETTE.length]!,
       isHost,
