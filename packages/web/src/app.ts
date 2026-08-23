@@ -55,6 +55,9 @@ let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 // Stamp mode lives outside render, so a state refresh keeps it on.
 let stampMode = false;
+// The host's chosen verdict also survives the re-renders between
+// choosing and pressing Send.
+let pendingVerdict = "";
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -217,6 +220,7 @@ function renderSidebar(state: RoomStateView, plan: HTMLElement): HTMLElement {
     if (round.verdict) box.append(el("p", "verdict", verdictLabel(round.verdict)));
     if (round.reply) {
       box.append(el("p", "reply", round.reply.message));
+      if (round.reply.meta) box.append(el("p", "meta", round.reply.meta));
     } else if (!ended) {
       box.append(el("p", "empty", "Waiting for the agent."));
     }
@@ -243,8 +247,15 @@ function renderSidebar(state: RoomStateView, plan: HTMLElement): HTMLElement {
 
   if (!ended && state.you.isHost) {
     side.append(renderPermissions(state));
+    // Ending is irreversible, so the first click only arms the button.
     const end = el("button", "end-button", "End session");
+    let armed = false;
     end.onclick = async () => {
+      if (!armed) {
+        armed = true;
+        end.textContent = "Really end?";
+        return;
+      }
       await postJson(`/api/rooms/${state.id}/end`, {});
       refresh(state.id);
     };
@@ -257,7 +268,6 @@ function renderSidebar(state: RoomStateView, plan: HTMLElement): HTMLElement {
 function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElement {
   const box = el("section", "send");
   box.append(el("h2", undefined, "Send the round"));
-  let verdict = "";
   if (state.you.isHost) {
     const select = el("select");
     for (const [value, label] of [
@@ -269,8 +279,9 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
       option.value = value;
       select.append(option);
     }
+    select.value = pendingVerdict;
     select.onchange = () => {
-      verdict = select.value;
+      pendingVerdict = select.value;
     };
     box.append(select);
   }
@@ -281,9 +292,10 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
     const response = await postJson(`/api/rooms/${state.id}/flush`, {
       domSnapshot: plan.innerHTML,
       nextStep: "",
-      ...(verdict ? { verdict } : {}),
+      ...(pendingVerdict ? { verdict: pendingVerdict } : {}),
     });
     if (response.ok) {
+      pendingVerdict = "";
       refresh(state.id);
       return;
     }
