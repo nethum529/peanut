@@ -1,0 +1,10 @@
+{
+  "name": "peanut-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test"
+  }
+}
