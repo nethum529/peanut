@@ -115,7 +115,10 @@ export function captureRange(range: Range, root: Element): RangeAnchor | null {
     const block = startNode ? blockOf(startNode, root) : null;
     if (!block) return null;
     workRange = range.cloneRange();
-    workRange.setEnd(block, block.childNodes.length);
+    // Only extend to the block end when the end really left the block.
+    if (!block.contains(range.endContainer)) {
+      workRange.setEnd(block, block.childNodes.length);
+    }
     ancestor = block;
   }
   const selector = selectorFor(ancestor, root);
