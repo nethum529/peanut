@@ -63,8 +63,8 @@ or "The review has ended", or when the exit code is 1.
   the verdict and stop.
 - Exit code 2: a usage or connection error. Show the printed
   message to the user instead of retrying. The review may still
-  be open; a new peanut reply continues it after the problem is
-  fixed.
+  be open; peanut wait resumes waiting without sending anything,
+  and peanut reply continues after a reply was lost.
 
 ## Rules
 

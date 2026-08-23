@@ -182,6 +182,88 @@ describe("peanut cli", () => {
     expect(alive).toBe(false);
   }, 20000);
 
+  test("wait survives dropped poll connections and resumes the review", async () => {
+    // A proxy that kills the first two connections, then forwards.
+    // The retrying poll must ride through and deliver the round.
+    const targetPort = Number(new URL(server.url).port);
+    let seen = 0;
+    const proxy = Bun.listen<{ upstream?: Bun.Socket; pending: Uint8Array[] }>({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open(socket) {
+          socket.data = { pending: [] };
+          seen += 1;
+          if (seen <= 2) {
+            socket.end();
+            return;
+          }
+          Bun.connect({
+            hostname: "127.0.0.1",
+            port: targetPort,
+            socket: {
+              data(_upstream, chunk) {
+                socket.write(chunk);
+              },
+              close() {
+                socket.end();
+              },
+              error() {
+                socket.end();
+              },
+            },
+          }).then((upstream) => {
+            socket.data.upstream = upstream;
+            for (const chunk of socket.data.pending) upstream.write(chunk);
+            socket.data.pending = [];
+          });
+        },
+        data(socket, chunk) {
+          if (socket.data.upstream) socket.data.upstream.write(chunk);
+          else socket.data.pending.push(new Uint8Array(chunk));
+        },
+        close(socket) {
+          socket.data.upstream?.end();
+        },
+        error(socket) {
+          socket.data.upstream?.end();
+        },
+      },
+    });
+
+    const plan = await writePlan();
+    const first = run(["share", plan, "--server", server.url]);
+    const session = await waitForSession(join(dir, SESSION));
+    const cookie = await joinAsHost(session.roomId);
+    await pinAndFlush(session.roomId, cookie, "Cap the backoff.");
+    expect(await first.exited).toBe(0);
+
+    // Point the session at the flaky proxy and resume with wait.
+    const stored = await Bun.file(join(dir, SESSION)).json();
+    stored.server = `http://127.0.0.1:${proxy.port}`;
+    await Bun.write(join(dir, SESSION), JSON.stringify(stored));
+    const waiting = run(["wait"]);
+    await Bun.sleep(500);
+    await pinAndFlush(session.roomId, cookie, "Also log attempts.");
+    expect(await waiting.exited).toBe(0);
+    const out = await new Response(waiting.stdout).text();
+    expect(out).toContain("== Round 2 ==");
+    expect(out).toContain("Also log attempts.");
+    expect(seen).toBeGreaterThan(2);
+    proxy.stop(true);
+  }, 20000);
+
+  test("wait against a dead server exits 2 after bounded retries", async () => {
+    await Bun.write(
+      join(dir, SESSION),
+      JSON.stringify({ server: "http://127.0.0.1:9", roomId: "x", agentToken: "y", lastRound: 0 }),
+    );
+    const proc = run(["wait"]);
+    expect(await proc.exited).toBe(2);
+    const err = await new Response(proc.stderr).text();
+    expect(err).toContain("peanut wait");
+  }, 20000);
+
   test("a dead server is a usage error, not a verdict", async () => {
     await Bun.write(
       join(dir, SESSION),
