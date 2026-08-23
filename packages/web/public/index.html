@@ -82,6 +82,18 @@
         cursor: pointer;
       }
       .error { color: #a33; min-height: 1em; margin: 0; }
+      .stamp-toggle {
+        padding: 4px 12px;
+        border: 1px solid var(--accent);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--accent);
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .stamp-toggle.on { background: var(--accent); color: #fff; }
+      .stamp-hover { outline: 2px dashed var(--accent); outline-offset: 3px; }
+      .stamped { outline: 2px solid; outline-offset: 3px; cursor: pointer; }
       mark.pin {
         background: rgba(90, 95, 158, 0.14);
         text-decoration: underline;

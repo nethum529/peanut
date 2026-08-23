@@ -1,6 +1,12 @@
 import { Window } from "happy-dom";
 import { beforeEach, describe, expect, test } from "bun:test";
-import { captureRange, restoreAnchor, selectorFor, type RangeAnchor } from "./anchors.ts";
+import {
+  captureRange,
+  restoreAnchor,
+  restoreStamp,
+  selectorFor,
+  type RangeAnchor,
+} from "./anchors.ts";
 
 // The anchor module runs against the browser DOM; happy-dom stands in
 // for it here. The globals it reads (Node) are registered per test.
@@ -44,6 +50,22 @@ describe("selectorFor", () => {
     const plan = setup("<div><div><div><div><div><div><p>deep</p></div></div></div></div></div></div>");
     const p = plan.querySelector("p")!;
     expect(selectorFor(p, plan).split(" > ").length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("restoreStamp", () => {
+  test("restores the same element from a selector round trip", () => {
+    const plan = setup("<p>a</p><ul><li>x</li><li>y</li></ul>");
+    const target = plan.querySelectorAll("li")[1]!;
+    const selector = selectorFor(target, plan);
+    expect(restoreStamp(plan, { type: "stamp", selector })).toBe(target);
+  });
+
+  test("returns null for a missing element, a bad selector, or no selector", () => {
+    const plan = setup("<p>a</p>");
+    expect(restoreStamp(plan, { type: "stamp", selector: "h2" })).toBeNull();
+    expect(restoreStamp(plan, { type: "stamp", selector: ":::nope" })).toBeNull();
+    expect(restoreStamp(plan, { type: "stamp", selector: "" })).toBeNull();
   });
 });
 

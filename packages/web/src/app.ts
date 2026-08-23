@@ -1,4 +1,11 @@
-import { captureRange, restoreAnchor, type RangeAnchor } from "./anchors.ts";
+import {
+  captureRange,
+  restoreAnchor,
+  restoreStamp,
+  selectorFor,
+  type RangeAnchor,
+  type StampAnchor,
+} from "./anchors.ts";
 import { renderMarkdown } from "./markdown.ts";
 
 interface ParticipantView {
@@ -33,6 +40,8 @@ const POLL_MS = 2000;
 
 let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+// Stamp mode lives outside render, so a state refresh keeps it on.
+let stampMode = false;
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -112,6 +121,16 @@ function render(state: RoomStateView): void {
     people.append(chip);
   }
   bar.append(brand, title, people);
+  if (state.status !== "ended") {
+    const stamp = el("button", "stamp-toggle", "Stamp");
+    if (stampMode) stamp.classList.add("on");
+    stamp.onclick = () => {
+      stampMode = !stampMode;
+      stamp.classList.toggle("on", stampMode);
+      if (!stampMode) clearHover();
+    };
+    bar.append(stamp);
+  }
 
   const plan = el("main", "plan");
   plan.id = "plan";
@@ -141,11 +160,21 @@ function render(state: RoomStateView): void {
   }
 }
 
-// Marks every restorable range instruction in the plan and returns the
+// Marks every restorable instruction in the plan and returns the
 // instructions whose anchor no longer matches the content.
 function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): InstructionView[] {
   const unanchored: InstructionView[] = [];
+  const stamps = new Map<Element, InstructionView[]>();
   for (const instruction of state.instructions) {
+    if (instruction.anchor.type === "stamp") {
+      const target = restoreStamp(plan, instruction.anchor as unknown as StampAnchor);
+      if (!target) {
+        unanchored.push(instruction);
+        continue;
+      }
+      stamps.set(target, [...(stamps.get(target) ?? []), instruction]);
+      continue;
+    }
     if (instruction.anchor.type !== "range") {
       unanchored.push(instruction);
       continue;
@@ -167,9 +196,19 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
       mark.append(node);
       mark.onclick = (event) => {
         event.stopPropagation();
-        showCard(mark, state, instruction);
+        showCard(mark, state, [instruction]);
       };
     }
+  }
+  for (const [target, list] of stamps) {
+    const element = target as HTMLElement;
+    element.classList.add("stamped");
+    element.style.outlineColor = list[list.length - 1]!.author.color;
+    element.onclick = (event) => {
+      if (stampMode) return;
+      event.stopPropagation();
+      showCard(element, state, list);
+    };
   }
   return unanchored;
 }
@@ -198,19 +237,81 @@ function closeCard(): void {
   document.querySelector(".card")?.remove();
 }
 
-function showCard(mark: HTMLElement, state: RoomStateView, instruction: InstructionView): void {
+function showCard(mark: HTMLElement, state: RoomStateView, list: InstructionView[]): void {
   closeCard();
   const card = el("div", "card");
-  card.append(instructionRow(state, instruction, "div"));
+  for (const instruction of list) {
+    card.append(instructionRow(state, instruction, "div"));
+  }
   positionNear(card, mark);
 }
 
-// The floating pin composer that appears under a text selection.
+let hovered: HTMLElement | null = null;
+
+function clearHover(): void {
+  hovered?.classList.remove("stamp-hover");
+  hovered = null;
+}
+
+// Inline markup inside a block. A stamp always targets the block, so
+// the pointer never jitters between a paragraph and its bold or link
+// fragments, and a highlight span is never a target.
+const INLINE_TAGS = new Set(["MARK", "STRONG", "EM", "CODE", "A"]);
+
+function stampTarget(plan: HTMLElement, node: EventTarget | null): HTMLElement | null {
+  if (!(node instanceof Element)) return null;
+  let element: Element | null = node;
+  while (element && element !== plan && INLINE_TAGS.has(element.tagName)) {
+    element = element.parentElement;
+  }
+  if (!element || element === plan || !plan.contains(element)) return null;
+  return element as HTMLElement;
+}
+
+function openComposer(
+  state: RoomStateView,
+  anchor: RangeAnchor | StampAnchor,
+  target: Range | HTMLElement,
+  placeholder: string,
+): void {
+  document.querySelector(".composer")?.remove();
+  const composer = el("div", "composer");
+  const input = el("input");
+  input.placeholder = placeholder;
+  input.maxLength = 500;
+  const pin = el("button", undefined, "Pin");
+  composer.append(input, pin);
+  positionNear(composer, target);
+  input.focus();
+
+  const submit = async (): Promise<void> => {
+    const words = input.value.trim();
+    if (!words) return;
+    const response = await fetch(`/api/rooms/${state.id}/instructions`, {
+      method: "POST",
+      body: JSON.stringify({ words, anchor }),
+    });
+    composer.remove();
+    if (response.ok) {
+      window.getSelection()?.removeAllRanges();
+      refresh(state.id);
+    }
+  };
+  pin.onclick = submit;
+  input.onkeydown = (key) => {
+    if (key.key === "Enter") submit();
+    if (key.key === "Escape") composer.remove();
+  };
+}
+
+// The pin gestures: a text selection opens the range composer, and in
+// stamp mode a hover outlines the block while a click stamps it.
 function wireComposer(plan: HTMLElement, state: RoomStateView): void {
   document.onclick = () => {
     closeCard();
   };
   document.onmouseup = (event) => {
+    if (stampMode) return;
     if ((event.target as HTMLElement).closest(".composer, .card")) return;
     document.querySelector(".composer")?.remove();
     const selection = window.getSelection();
@@ -218,34 +319,30 @@ function wireComposer(plan: HTMLElement, state: RoomStateView): void {
     const range = selection.getRangeAt(0);
     const anchor = captureRange(range, plan);
     if (!anchor) return;
-
-    const composer = el("div", "composer");
-    const input = el("input");
-    input.placeholder = "Pin an instruction to this text";
-    input.maxLength = 500;
-    const pin = el("button", undefined, "Pin");
-    composer.append(input, pin);
-    positionNear(composer, range);
-    input.focus();
-
-    const submit = async (): Promise<void> => {
-      const words = input.value.trim();
-      if (!words) return;
-      const response = await fetch(`/api/rooms/${state.id}/instructions`, {
-        method: "POST",
-        body: JSON.stringify({ words, anchor }),
-      });
-      composer.remove();
-      if (response.ok) {
-        selection.removeAllRanges();
-        refresh(state.id);
-      }
-    };
-    pin.onclick = submit;
-    input.onkeydown = (key) => {
-      if (key.key === "Enter") submit();
-      if (key.key === "Escape") composer.remove();
-    };
+    openComposer(state, anchor, range, "Pin an instruction to this text");
+  };
+  plan.onmouseover = (event) => {
+    if (!stampMode) return;
+    const target = stampTarget(plan, event.target);
+    if (target === hovered) return;
+    clearHover();
+    if (target) {
+      target.classList.add("stamp-hover");
+      hovered = target;
+    }
+  };
+  plan.onmouseleave = () => {
+    clearHover();
+  };
+  plan.onclick = (event) => {
+    if (!stampMode) return;
+    const target = stampTarget(plan, event.target);
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const selector = selectorFor(target, plan);
+    if (!selector) return;
+    openComposer(state, { type: "stamp", selector }, target, "Pin an instruction to this block");
   };
 }
 
