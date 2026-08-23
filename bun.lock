@@ -12,6 +12,9 @@
     },
     "packages/cli": {
       "name": "@peanut/cli",
+      "dependencies": {
+        "@peanut/server": "workspace:*",
+      },
     },
     "packages/server": {
       "name": "@peanut/server",

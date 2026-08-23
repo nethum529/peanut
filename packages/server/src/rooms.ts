@@ -103,7 +103,8 @@ export class RoomError extends Error {
       | "bad_agent_token"
       | "empty_flush"
       | "room_ended"
-      | "round_pending",
+      | "round_pending"
+      | "bad_ack",
     message: string,
   ) {
     super(message);
@@ -113,11 +114,13 @@ export class RoomError extends Error {
 export class RoomStore {
   private rooms = new Map<string, Room>();
 
-  createRoom(input: { title: string; content: string; hostName: string }): {
+  // Without a hostName the room starts empty and the first joiner
+  // becomes the host. The CLI uses this shape: the agent creates the
+  // room, and the person who opens the link runs it.
+  createRoom(input: { title: string; content: string; hostName?: string }): {
     room: Room;
-    host: Participant;
+    host: Participant | null;
   } {
-    const hostName = normalizeName(input.hostName);
     const room: Room = {
       id: randomId(),
       title: input.title.trim() || "Review",
@@ -130,7 +133,10 @@ export class RoomStore {
       rounds: [],
       pendingRound: null,
     };
-    const host = this.addParticipant(room, hostName, true);
+    const host =
+      input.hostName === undefined
+        ? null
+        : this.addParticipant(room, normalizeName(input.hostName), true);
     this.rooms.set(room.id, room);
     return { room, host };
   }
@@ -149,7 +155,7 @@ export class RoomStore {
       const existing = room.participants.get(input.sessionId);
       if (existing) return existing;
     }
-    return this.addParticipant(room, normalizeName(input.name), false);
+    return this.addParticipant(room, normalizeName(input.name), room.participants.size === 0);
   }
 
   participant(roomId: string, sessionId: string | undefined): Participant {
@@ -342,13 +348,13 @@ export class RoomStore {
     return room;
   }
 
-  // Destructive take: the caller owns delivery and must restoreRound if the
-  // connection dies before the payload is written out.
-  takeRound(roomId: string, token: string | undefined): AgentPollResult {
+  // Delivery is at-least-once: a poll only reads the pending round, and
+  // the agent must acknowledge it before the room accepts a new flush.
+  // A round lost on the wire is simply delivered again on the next poll.
+  peekRound(roomId: string, token: string | undefined): AgentPollResult {
     const room = this.agent(roomId, token);
     const pending = room.pendingRound;
     if (pending) {
-      room.pendingRound = null;
       return {
         status: "round",
         round: pending.number,
@@ -369,14 +375,19 @@ export class RoomStore {
     return { status: "waiting" };
   }
 
-  restoreRound(roomId: string, token: string | undefined, result: AgentPollResult): void {
+  // The agent confirms it holds the named round; only then can the room
+  // flush again.
+  ackRound(roomId: string, token: string | undefined, roundNumber: number): void {
     const room = this.agent(roomId, token);
-    if (result.status !== "round") return;
-    // Only restore when nothing newer was flushed meanwhile; a newer pending
-    // round supersedes the lost one.
-    if (!room.pendingRound) {
-      room.pendingRound = room.rounds.find((r) => r.number === result.round) ?? null;
+    if (room.pendingRound?.number === roundNumber) {
+      room.pendingRound = null;
+      this.wake(room.id);
+      return;
     }
+    // A retried or late ack for any already delivered round must not
+    // fail, even after a newer round was flushed meanwhile.
+    if (room.rounds.some((round) => round.number === roundNumber)) return;
+    throw new RoomError("bad_ack", "there is no round with that number");
   }
 
   // The agent names the round it is answering; without a number the reply

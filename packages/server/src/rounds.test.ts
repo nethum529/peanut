@@ -62,6 +62,14 @@ async function poll(roomId: string, token: string, timeoutMs?: number) {
   return { response, body: JSON.parse(text) };
 }
 
+async function ack(roomId: string, token: string, round: number) {
+  return fetch(`${server.url}/api/rooms/${roomId}/agent/ack`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ round }),
+  });
+}
+
 async function state(roomId: string, cookie: string) {
   const response = await fetch(`${server.url}/api/rooms/${roomId}/state`, { headers: { cookie } });
   return response.json();
@@ -134,34 +142,50 @@ describe("agent poll", () => {
     expect(body.status).toBe("waiting");
   });
 
-  test("delivery is destructive: a taken round is not served twice", async () => {
+  test("a round repeats on every poll until it is acked", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "One.");
     await flush(roomId, hostCookie);
     const first = await poll(roomId, agentToken, 1000);
     expect(first.body.status).toBe("round");
-    const second = await poll(roomId, agentToken, 100);
-    expect(second.body.status).toBe("waiting");
+    const again = await poll(roomId, agentToken, 100);
+    expect(again.body).toEqual(first.body);
+    expect((await ack(roomId, agentToken, 1)).status).toBe(200);
+    const after = await poll(roomId, agentToken, 100);
+    expect(after.body.status).toBe("waiting");
   });
 
-  test("a restored round is delivered again", async () => {
+  test("an ack retry succeeds and a wrong ack is refused", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    expect((await ack(roomId, agentToken, 1)).status).toBe(409);
+    await pin(roomId, hostCookie, "One.");
+    await flush(roomId, hostCookie);
+    expect((await ack(roomId, agentToken, 7)).status).toBe(409);
+    expect((await ack(roomId, agentToken, 1)).status).toBe(200);
+    expect((await ack(roomId, agentToken, 1)).status).toBe(200);
+  });
+
+  test("a late ack for a delivered round succeeds after a newer flush", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "One.");
     await flush(roomId, hostCookie);
-    const taken = server.store.takeRound(roomId, agentToken);
-    expect(taken.status).toBe("round");
-    server.store.restoreRound(roomId, agentToken, taken);
-    const again = server.store.takeRound(roomId, agentToken);
-    expect(again).toEqual(taken);
+    await ack(roomId, agentToken, 1);
+    await pin(roomId, hostCookie, "Two.");
+    await flush(roomId, hostCookie);
+    expect((await ack(roomId, agentToken, 1)).status).toBe(200);
+    const { body } = await poll(roomId, agentToken, 200);
+    expect(body.round).toBe(2);
   });
 
-  test("a flush is refused while the previous round is still undelivered", async () => {
+  test("a flush is refused until the previous round is acked", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "One.");
     await flush(roomId, hostCookie);
     await pin(roomId, hostCookie, "Two.");
     expect((await flush(roomId, hostCookie)).status).toBe(409);
     await poll(roomId, agentToken, 500);
+    expect((await flush(roomId, hostCookie)).status).toBe(409);
+    await ack(roomId, agentToken, 1);
     expect((await flush(roomId, hostCookie)).status).toBe(201);
   });
 
@@ -170,6 +194,7 @@ describe("agent poll", () => {
     await pin(roomId, hostCookie, "One.");
     await flush(roomId, hostCookie);
     await poll(roomId, agentToken, 500);
+    await ack(roomId, agentToken, 1);
     await pin(roomId, hostCookie, "Two.");
     await flush(roomId, hostCookie);
     const response = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
@@ -298,6 +323,7 @@ describe("reply and end", () => {
     expect(first.body.status).toBe("round");
     expect(first.body.session_ended).toBe(true);
     expect(first.body.ended_by).toBe("user");
+    await ack(roomId, agentToken, 1);
     const second = await poll(roomId, agentToken, 100);
     expect(second.body).toEqual({ status: "ended", ended_by: "user", verdict: "end" });
   });
