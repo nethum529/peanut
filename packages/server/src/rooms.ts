@@ -379,16 +379,15 @@ export class RoomStore {
   // flush again.
   ackRound(roomId: string, token: string | undefined, roundNumber: number): void {
     const room = this.agent(roomId, token);
-    if (!room.pendingRound) {
-      // A retried ack whose first response was lost must not fail.
-      if (room.rounds.some((round) => round.number === roundNumber)) return;
-      throw new RoomError("bad_ack", "there is no pending round with that number");
+    if (room.pendingRound?.number === roundNumber) {
+      room.pendingRound = null;
+      this.wake(room.id);
+      return;
     }
-    if (room.pendingRound.number !== roundNumber) {
-      throw new RoomError("bad_ack", "the pending round has a different number");
-    }
-    room.pendingRound = null;
-    this.wake(room.id);
+    // A retried or late ack for any already delivered round must not
+    // fail, even after a newer round was flushed meanwhile.
+    if (room.rounds.some((round) => round.number === roundNumber)) return;
+    throw new RoomError("bad_ack", "there is no round with that number");
   }
 
   // The agent names the round it is answering; without a number the reply

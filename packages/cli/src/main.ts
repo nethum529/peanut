@@ -49,8 +49,15 @@ function fail(message: string): never {
   process.exit(2);
 }
 
+// The default session file lives outside the working directory: it
+// holds the agent token, and a secret in cwd is one git add -A away
+// from a commit. The path is keyed by cwd, so a later invocation from
+// the same directory finds the same review.
 function sessionPath(flags: Flags): string {
-  return flags.named.get("session") ?? ".peanut-session.json";
+  const explicit = flags.named.get("session");
+  if (explicit) return explicit;
+  const key = Bun.hash(process.cwd()).toString(36);
+  return `${process.env.TMPDIR ?? "/tmp"}/peanut-session-${key}.json`;
 }
 
 async function loadSession(flags: Flags): Promise<Session> {
@@ -131,6 +138,26 @@ async function finishReview(
   process.exit(code);
 }
 
+// The room refuses new flushes until the round is acknowledged, so a
+// failed ack would wedge the review. Retry, and treat a conflict as
+// already acknowledged only after the server confirms the round exists.
+async function ackRound(session: Session, round: number): Promise<void> {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await api(session, "POST", `/api/rooms/${session.roomId}/agent/ack`, {
+        round,
+      });
+      if (response.ok) return;
+      lastStatus = response.status;
+    } catch {
+      lastStatus = 0;
+    }
+    await Bun.sleep(200);
+  }
+  fail(`Could not acknowledge round ${round} (status ${lastStatus}). Run peanut reply to retry.`);
+}
+
 // Blocks until the next round or the end of the review, prints it,
 // acknowledges a round, and exits.
 async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
@@ -150,9 +177,11 @@ async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
       return finishReview(flags, session, true, isApproved(result) ? 0 : 1);
     }
     console.log(formatRound(result));
-    await api(session, "POST", `/api/rooms/${session.roomId}/agent/ack`, { round: result.round });
+    // The session records the round before the ack, so a reply after a
+    // wedged ack still targets the round that was printed.
     session.lastRound = result.round;
     await saveSession(flags, session);
+    await ackRound(session, result.round);
     if (result.session_ended) {
       return finishReview(flags, session, true, isApproved(result) ? 0 : 1);
     }
@@ -233,7 +262,13 @@ async function serve(flags: Flags): Promise<void> {
 const flags = parseArgs(process.argv.slice(2));
 const command = flags.positional.shift();
 
-if (command === "share") await share(flags);
-else if (command === "reply") await reply(flags);
-else if (command === "serve") await serve(flags);
-else fail("Usage: peanut <share|reply|serve> ...");
+try {
+  if (command === "share") await share(flags);
+  else if (command === "reply") await reply(flags);
+  else if (command === "serve") await serve(flags);
+  else fail("Usage: peanut <share|reply|serve> ...");
+} catch (error) {
+  // A transport failure must not look like a review verdict. Exit 1
+  // is reserved for a review that ended without approve.
+  fail(`peanut hit an error: ${error instanceof Error ? error.message : String(error)}`);
+}

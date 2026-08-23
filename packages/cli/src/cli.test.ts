@@ -19,8 +19,10 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+const SESSION = ".peanut-session.json";
+
 function run(args: string[]) {
-  return Bun.spawn([process.execPath, MAIN, ...args], {
+  return Bun.spawn([process.execPath, MAIN, ...args, "--session", SESSION], {
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
@@ -179,6 +181,15 @@ describe("peanut cli", () => {
     }
     expect(alive).toBe(false);
   }, 20000);
+
+  test("a dead server is a usage error, not a verdict", async () => {
+    await Bun.write(
+      join(dir, SESSION),
+      JSON.stringify({ server: "http://127.0.0.1:9", roomId: "x", agentToken: "y", lastRound: 1 }),
+    );
+    const proc = run(["reply", "done"]);
+    expect(await proc.exited).toBe(2);
+  }, 15000);
 
   test("a missing file or unknown command fails with exit 2", async () => {
     const missing = run(["share", join(dir, "nope.md"), "--server", server.url]);

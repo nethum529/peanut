@@ -165,6 +165,18 @@ describe("agent poll", () => {
     expect((await ack(roomId, agentToken, 1)).status).toBe(200);
   });
 
+  test("a late ack for a delivered round succeeds after a newer flush", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    await pin(roomId, hostCookie, "One.");
+    await flush(roomId, hostCookie);
+    await ack(roomId, agentToken, 1);
+    await pin(roomId, hostCookie, "Two.");
+    await flush(roomId, hostCookie);
+    expect((await ack(roomId, agentToken, 1)).status).toBe(200);
+    const { body } = await poll(roomId, agentToken, 200);
+    expect(body.round).toBe(2);
+  });
+
   test("a flush is refused until the previous round is acked", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "One.");
