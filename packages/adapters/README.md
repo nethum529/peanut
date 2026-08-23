@@ -15,10 +15,13 @@ ln -s "$(pwd)/claude-code/peanut" ~/.claude/skills/peanut
 Then invoke it inside Claude Code with /peanut, or ask the agent
 to get its plan reviewed.
 
-The skill expects the peanut CLI on PATH. From this repo:
+The skill expects the peanut CLI on PATH as a real executable;
+the agent's shell is non-interactive, so an alias is not enough.
+From this repo:
 
 ```
-alias peanut="bun packages/cli/src/main.ts"
+printf '#!/bin/sh\nexec bun %s/packages/cli/src/main.ts "$@"\n' "$(pwd)" > ~/.local/bin/peanut
+chmod +x ~/.local/bin/peanut
 ```
 
 ## Codex and OpenCode
