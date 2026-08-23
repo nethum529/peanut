@@ -68,26 +68,60 @@ function charOffset(element: Element, node: Node, offset: number): number | null
     return null;
   }
   // An element boundary: count the text before the child at offset.
+  // The boundary sits before children[offset], or at the end of node
+  // when offset points past the last child.
   const children = [...node.childNodes];
   const boundary = children[offset] ?? null;
   for (const text of textNodesUnder(element)) {
-    if (boundary && boundary.contains(text)) return total;
-    if (!boundary && !node.contains(text)) return total;
+    if (boundary) {
+      if (boundary === text || boundary.contains(text)) return total;
+      if (boundary.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) return total;
+    } else {
+      const position = node.compareDocumentPosition(text);
+      if (
+        position & Node.DOCUMENT_POSITION_FOLLOWING &&
+        !(position & Node.DOCUMENT_POSITION_CONTAINED_BY)
+      ) {
+        return total;
+      }
+    }
     total += text.data.length;
   }
-  return boundary ? null : total;
+  return total;
+}
+
+// The direct child of root that holds node, or null.
+function blockOf(node: Node, root: Element): Element | null {
+  let block = elementFor(node);
+  while (block && block !== root && block.parentElement !== root) {
+    block = block.parentElement;
+  }
+  return block && block !== root ? block : null;
 }
 
 export function captureRange(range: Range, root: Element): RangeAnchor | null {
   if (range.collapsed) return null;
-  const ancestor = elementFor(range.commonAncestorContainer);
+  let ancestor = elementFor(range.commonAncestorContainer);
   if (!ancestor || !root.contains(ancestor)) return null;
-  // Anchor to a direct block of the plan when possible, so the
-  // selector stays short and stable.
+  let workRange = range;
+  if (ancestor === root) {
+    // A selection across blocks trims to the block that holds the
+    // start. The common triple click shape ends at the start of the
+    // next block, so the trim keeps what the reviewer sees selected.
+    const startNode =
+      range.startContainer === root
+        ? (root.childNodes[range.startOffset] ?? null)
+        : range.startContainer;
+    const block = startNode ? blockOf(startNode, root) : null;
+    if (!block) return null;
+    workRange = range.cloneRange();
+    workRange.setEnd(block, block.childNodes.length);
+    ancestor = block;
+  }
   const selector = selectorFor(ancestor, root);
   if (!selector) return null;
-  const start = charOffset(ancestor, range.startContainer, range.startOffset);
-  const end = charOffset(ancestor, range.endContainer, range.endOffset);
+  const start = charOffset(ancestor, workRange.startContainer, workRange.startOffset);
+  const end = charOffset(ancestor, workRange.endContainer, workRange.endOffset);
   if (start === null || end === null || end <= start) return null;
   const quote = (ancestor.textContent ?? "").slice(start, end);
   if (!quote.trim()) return null;

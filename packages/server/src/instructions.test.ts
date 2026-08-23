@@ -128,3 +128,18 @@ describe("removal", () => {
     expect((await remove(roomId, hostCookie, "nope")).status).toBe(404);
   });
 });
+
+describe("instructions after the end", () => {
+  test("an ended room refuses pin and remove with 409", async () => {
+    const { roomId, hostCookie } = await setup();
+    const { body: pinned } = await pin(roomId, hostCookie, "before the end");
+    await fetch(`${server.url}/api/rooms/${roomId}/end`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+    });
+    const { response: late } = await pin(roomId, hostCookie, "too late");
+    expect(late.status).toBe(409);
+    const removal = await remove(roomId, hostCookie, pinned.id);
+    expect(removal.status).toBe(409);
+  });
+});

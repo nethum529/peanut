@@ -73,6 +73,36 @@ describe("captureRange", () => {
     expect(anchor.endOffset).toBe(13);
   });
 
+  test("handles an element boundary at the end of inline markup", () => {
+    const plan = setup("<p>Hello <strong>world</strong> tail</p>");
+    const p = plan.querySelector("p")!;
+    const strong = plan.querySelector("strong")!;
+    const anchor = captureRange(rangeOver(p.firstChild!, 0, strong, 1), plan)!;
+    expect(anchor).not.toBeNull();
+    expect(anchor.quote).toBe("Hello world");
+    expect(anchor.startOffset).toBe(0);
+    expect(anchor.endOffset).toBe(11);
+  });
+
+  test("an element boundary after the last child counts the whole subtree", () => {
+    const plan = setup("<p>one <em>two</em></p>");
+    const p = plan.querySelector("p")!;
+    const anchor = captureRange(rangeOver(p.firstChild!, 0, p, 2), plan)!;
+    expect(anchor.quote).toBe("one two");
+  });
+
+  test("a selection across two blocks trims to the start block", () => {
+    const plan = setup("<p>first block</p><p>second block</p>");
+    const paragraphs = plan.querySelectorAll("p");
+    const anchor = captureRange(
+      rangeOver(paragraphs[0]!.firstChild!, 6, paragraphs[1]!.firstChild!, 0),
+      plan,
+    )!;
+    expect(anchor).not.toBeNull();
+    expect(anchor.selector).toBe("p:nth-of-type(1)");
+    expect(anchor.quote).toBe("block");
+  });
+
   test("refuses a collapsed or whitespace selection", () => {
     const plan = setup("<p>a   b</p>");
     const text = plan.querySelector("p")!.firstChild!;

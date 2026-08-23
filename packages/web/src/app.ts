@@ -95,6 +95,10 @@ function showJoinDialog(roomId: string): void {
 function render(state: RoomStateView): void {
   const root = document.getElementById("app")!;
   root.replaceChildren();
+  // Floating boxes live on document.body; a re-render must not leave
+  // one pointing at a view that no longer exists.
+  closeCard();
+  document.querySelector(".composer")?.remove();
 
   const bar = el("header", "toolbar");
   const brand = el("span", "wordmark", "Peanut");
@@ -128,6 +132,9 @@ function render(state: RoomStateView): void {
   }
 
   if (state.status === "ended") {
+    // Drop the selection handler from an earlier render, so no new
+    // composer can open into an ended room.
+    document.onmouseup = null;
     root.append(el("div", "ended", "This session has ended."));
   } else {
     wireComposer(plan, state);
