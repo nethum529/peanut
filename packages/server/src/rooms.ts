@@ -222,6 +222,7 @@ export class RoomStore {
     input: { words: string; anchor: Anchor },
   ): Instruction {
     const room = this.getRoom(roomId);
+    if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");
     const author = this.participant(roomId, sessionId);
     const words = input.words.trim();
     if (!words || words.length > 2000) {
@@ -241,6 +242,7 @@ export class RoomStore {
   // The author can withdraw their own instruction; the host can prune any.
   removeInstruction(roomId: string, sessionId: string | undefined, instructionId: string): void {
     const room = this.getRoom(roomId);
+    if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");
     const remover = this.participant(roomId, sessionId);
     const instruction = room.instructions.get(instructionId);
     if (!instruction) {
