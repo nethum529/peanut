@@ -144,7 +144,7 @@ describe("agent poll", () => {
     expect(second.body.status).toBe("waiting");
   });
 
-  test("a restored round is delivered again, unless a newer one superseded it", async () => {
+  test("a restored round is delivered again", async () => {
     const { roomId, agentToken, hostCookie } = await setup();
     await pin(roomId, hostCookie, "One.");
     await flush(roomId, hostCookie);
@@ -153,15 +153,34 @@ describe("agent poll", () => {
     server.store.restoreRound(roomId, agentToken, taken);
     const again = server.store.takeRound(roomId, agentToken);
     expect(again).toEqual(taken);
+  });
 
-    // A newer pending round wins over a restore of the lost one.
-    server.store.restoreRound(roomId, agentToken, again);
+  test("a flush is refused while the previous round is still undelivered", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    await pin(roomId, hostCookie, "One.");
+    await flush(roomId, hostCookie);
+    await pin(roomId, hostCookie, "Two.");
+    expect((await flush(roomId, hostCookie)).status).toBe(409);
+    await poll(roomId, agentToken, 500);
+    expect((await flush(roomId, hostCookie)).status).toBe(201);
+  });
+
+  test("a reply can target an earlier round by number", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    await pin(roomId, hostCookie, "One.");
+    await flush(roomId, hostCookie);
+    await poll(roomId, agentToken, 500);
     await pin(roomId, hostCookie, "Two.");
     await flush(roomId, hostCookie);
-    server.store.restoreRound(roomId, agentToken, again);
-    const next = server.store.takeRound(roomId, agentToken);
-    expect(next.status).toBe("round");
-    if (next.status === "round") expect(next.round).toBe(2);
+    const response = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ message: "Round one done.", round: 1 }),
+    });
+    expect(response.status).toBe(201);
+    const view = await state(roomId, hostCookie);
+    expect(view.rounds[0].reply.message).toBe("Round one done.");
+    expect(view.rounds[1].reply).toBeUndefined();
   });
 
   test("the unbounded poll streams a heartbeat then the round", async () => {

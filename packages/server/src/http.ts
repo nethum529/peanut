@@ -119,11 +119,16 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   const replyMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/reply$/);
   if (request.method === "POST" && replyMatch) {
     const body = await readJson(request);
+    const roundNumber = body.round;
+    if (roundNumber !== undefined && !Number.isInteger(roundNumber)) {
+      throw new RoomError("bad_instruction", "round must be an integer");
+    }
     store.agentReply(
       replyMatch[1]!,
       bearerToken(request),
       stringField(body, "message"),
       stringField(body, "meta") || undefined,
+      roundNumber as number | undefined,
     );
     return json({ replied: true }, 201);
   }
@@ -178,7 +183,12 @@ async function agentPoll(
     while (true) {
       const remaining = deadline - Date.now();
       if (remaining <= 0 || request.signal.aborted) return json({ status: "waiting" });
-      await Promise.race([store.waitForChange(roomId, request.signal), sleep(remaining)]);
+      const waiter = store.changeWaiter(roomId, request.signal);
+      try {
+        await Promise.race([waiter.promise, sleep(remaining)]);
+      } finally {
+        waiter.dispose();
+      }
       const result = store.takeRound(roomId, token);
       if (result.status === "waiting") continue;
       if (request.signal.aborted) {
@@ -189,6 +199,7 @@ async function agentPoll(
     }
   }
 
+  let finish = () => {};
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
@@ -196,17 +207,21 @@ async function agentPoll(
       const heartbeat = setInterval(() => {
         if (!closed) controller.enqueue(encoder.encode(" "));
       }, POLL_HEARTBEAT_MS);
-      const finish = () => {
+      finish = () => {
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
       };
-      const onAbort = () => finish();
-      request.signal.addEventListener("abort", onAbort, { once: true });
+      request.signal.addEventListener("abort", finish, { once: true });
       (async () => {
         while (!closed) {
-          await store.waitForChange(roomId, request.signal);
-          if (request.signal.aborted) {
+          const waiter = store.changeWaiter(roomId, request.signal);
+          try {
+            await waiter.promise;
+          } finally {
+            waiter.dispose();
+          }
+          if (closed || request.signal.aborted) {
             finish();
             return;
           }
@@ -222,6 +237,12 @@ async function agentPoll(
           return;
         }
       })().catch(() => finish());
+    },
+    // The runtime can cancel the stream without the abort event firing
+    // first; without this the heartbeat interval would enqueue into a
+    // cancelled controller forever.
+    cancel() {
+      finish();
     },
   });
   return new Response(stream, { status: 200, headers: JSON_HEADERS });
@@ -242,6 +263,7 @@ function statusFor(code: RoomError["code"]): number {
     case "not_allowed":
       return 403;
     case "room_ended":
+    case "round_pending":
       return 409;
   }
 }

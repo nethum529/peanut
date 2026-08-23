@@ -92,7 +92,8 @@ export class RoomError extends Error {
       | "not_allowed"
       | "bad_agent_token"
       | "empty_flush"
-      | "room_ended",
+      | "room_ended"
+      | "round_pending",
     message: string,
   ) {
     super(message);
@@ -250,6 +251,11 @@ export class RoomStore {
     if (!flusher.isHost && !flusher.canSend) {
       throw new RoomError("not_allowed", "only the host or a granted guest can send to the agent");
     }
+    // A flush can not overwrite an undelivered round; superseding it would
+    // silently drop instructions the agent never saw.
+    if (room.pendingRound) {
+      throw new RoomError("round_pending", "the agent has not picked up the previous round yet");
+    }
     const instructions = [...room.instructions.values()].sort((a, b) => a.pinnedAt - b.pinnedAt);
     if (instructions.length === 0) {
       throw new RoomError("empty_flush", "there are no pinned instructions to send");
@@ -320,12 +326,24 @@ export class RoomStore {
     }
   }
 
-  agentReply(roomId: string, token: string | undefined, message: string, meta?: string): void {
+  // The agent names the round it is answering; without a number the reply
+  // lands on the latest round, which is only safe when no newer flush
+  // happened while the agent worked.
+  agentReply(
+    roomId: string,
+    token: string | undefined,
+    message: string,
+    meta?: string,
+    roundNumber?: number,
+  ): void {
     const room = this.agent(roomId, token);
     const trimmed = message.trim();
     if (!trimmed) throw new RoomError("bad_instruction", "a reply message is required");
-    const round = room.rounds[room.rounds.length - 1];
-    if (!round) throw new RoomError("not_allowed", "there is no round to reply to");
+    const round =
+      roundNumber === undefined
+        ? room.rounds[room.rounds.length - 1]
+        : room.rounds.find((r) => r.number === roundNumber);
+    if (!round) throw new RoomError("not_allowed", "there is no such round to reply to");
     round.reply = { message: trimmed, ...(meta ? { meta } : {}), repliedAt: Date.now() };
   }
 
@@ -335,8 +353,12 @@ export class RoomStore {
     const room = this.getRoom(roomId);
     const ender = this.participant(roomId, sessionId);
     if (!ender.isHost) throw new RoomError("not_allowed", "only the host can end the session");
-    room.status = "ended";
-    room.endedBy = "user";
+    // First end wins in both directions: an agent that already ended keeps
+    // ended_by agent, and a user end is never overwritten either.
+    if (room.status !== "ended") {
+      room.status = "ended";
+      room.endedBy = "user";
+    }
     this.wake(room.id);
   }
 
@@ -350,11 +372,17 @@ export class RoomStore {
   // A poll parks a waiter here; flush and end wake every waiter for the room.
   private waiters = new Map<string, Set<() => void>>();
 
-  waitForChange(roomId: string, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-      const set = this.waiters.get(roomId) ?? new Set();
-      this.waiters.set(roomId, set);
-      const done = () => {
+  // Returns a handle so a caller whose own timeout fires first can drop its
+  // waiter instead of leaking it until the next wake.
+  changeWaiter(roomId: string, signal?: AbortSignal): { promise: Promise<void>; dispose(): void } {
+    if (signal?.aborted) {
+      return { promise: Promise.resolve(), dispose() {} };
+    }
+    let done!: () => void;
+    const set = this.waiters.get(roomId) ?? new Set();
+    this.waiters.set(roomId, set);
+    const promise = new Promise<void>((resolve) => {
+      done = () => {
         set.delete(done);
         signal?.removeEventListener("abort", done);
         resolve();
@@ -362,6 +390,7 @@ export class RoomStore {
       set.add(done);
       signal?.addEventListener("abort", done, { once: true });
     });
+    return { promise, dispose: () => done() };
   }
 
   private wake(roomId: string): void {
