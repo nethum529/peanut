@@ -147,6 +147,84 @@ describe("removal", () => {
     const { roomId, hostCookie } = await setup();
     expect((await remove(roomId, hostCookie, "nope")).status).toBe(404);
   });
+
+  test("a granted guest removes another author's instruction", async () => {
+    const { roomId, hostCookie, guestCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Host note.");
+    await grantGuest(roomId, hostCookie, guestCookie);
+    expect((await remove(roomId, guestCookie, body.id)).status).toBe(200);
+  });
+});
+
+async function edit(roomId: string, cookie: string, id: string, words: string) {
+  return fetch(`${server.url}/api/rooms/${roomId}/instructions/${id}`, {
+    method: "PATCH",
+    headers: { cookie },
+    body: JSON.stringify({ words }),
+  });
+}
+
+async function grantGuest(roomId: string, hostCookie: string, guestCookie: string) {
+  const view = await state(roomId, guestCookie);
+  await fetch(`${server.url}/api/rooms/${roomId}/grants`, {
+    method: "POST",
+    headers: { cookie: hostCookie },
+    body: JSON.stringify({ participantId: view.you.id, canSend: true }),
+  });
+}
+
+describe("editing", () => {
+  test("the author edits their own instruction", async () => {
+    const { roomId, guestCookie } = await setup();
+    const { body } = await pin(roomId, guestCookie, "Old words.");
+    expect((await edit(roomId, guestCookie, body.id, "New words.")).status).toBe(200);
+    const view = await state(roomId, guestCookie);
+    expect(view.instructions[0].words).toBe("New words.");
+  });
+
+  test("the host edits any instruction", async () => {
+    const { roomId, hostCookie, guestCookie } = await setup();
+    const { body } = await pin(roomId, guestCookie, "Guest words.");
+    expect((await edit(roomId, hostCookie, body.id, "Host fixed it.")).status).toBe(200);
+  });
+
+  test("a granted guest edits another author's instruction", async () => {
+    const { roomId, hostCookie, guestCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Host words.");
+    await grantGuest(roomId, hostCookie, guestCookie);
+    expect((await edit(roomId, guestCookie, body.id, "Guest fixed it.")).status).toBe(200);
+  });
+
+  test("a plain guest can not edit another author's instruction", async () => {
+    const { roomId, hostCookie, guestCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Host words.");
+    expect((await edit(roomId, guestCookie, body.id, "Nope.")).status).toBe(403);
+    const view = await state(roomId, hostCookie);
+    expect(view.instructions[0].words).toBe("Host words.");
+  });
+
+  test("empty or over-long words are refused", async () => {
+    const { roomId, hostCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Fine.");
+    expect((await edit(roomId, hostCookie, body.id, "   ")).status).toBe(400);
+    expect((await edit(roomId, hostCookie, body.id, "x".repeat(2001))).status).toBe(400);
+  });
+
+  test("editing a missing instruction is a 404", async () => {
+    const { roomId, hostCookie } = await setup();
+    expect((await edit(roomId, hostCookie, "nope", "New words.")).status).toBe(404);
+  });
+
+  test("a flushed instruction can not be edited", async () => {
+    const { roomId, hostCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Queued words.");
+    await fetch(`${server.url}/api/rooms/${roomId}/flush`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ domSnapshot: "<main></main>", nextStep: "" }),
+    });
+    expect((await edit(roomId, hostCookie, body.id, "Too late.")).status).toBe(404);
+  });
 });
 
 describe("instructions after the end", () => {
