@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
 const BINARY = join(ROOT, "dist", "peanut");
+const NOTICE = join(ROOT, "dist", "NOTICE");
 const SESSION = ".peanut-session.json";
 
 let dir: string;
@@ -65,12 +66,24 @@ describe("compiled binary", () => {
     expect(script.ok).toBe(true);
     expect(script.headers.get("content-type")).toContain("javascript");
     expect((await script.text()).length).toBeGreaterThan(1000);
-    for (const weight of [400, 500, 600, 700]) {
-      const font = await fetch(`${session.server}/fonts/google-sans-${weight}.woff2`);
+    const fontPaths = [
+      "google-sans.woff2",
+      "google-sans-latin-ext.woff2",
+      "google-sans-italic.woff2",
+      "google-sans-italic-latin-ext.woff2",
+    ];
+    for (const path of fontPaths) {
+      const font = await fetch(`${session.server}/fonts/${path}`);
       expect(font.ok).toBe(true);
       expect(font.headers.get("content-type")).toBe("font/woff2");
+      expect(font.headers.get("cache-control")).toBe(
+        "public, max-age=31536000, immutable",
+      );
       expect((await font.bytes()).length).toBeGreaterThan(1000);
     }
+    const notice = await Bun.file(NOTICE).text();
+    expect(notice).toContain("Copyright 2025 The Google Sans Project Authors");
+    expect(notice).toContain("SIL OPEN FONT LICENSE Version 1.1");
 
     // End the review; the CLI must exit 1 and stop its server.
     const ended = await fetch(

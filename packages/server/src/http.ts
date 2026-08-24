@@ -10,10 +10,10 @@ export interface PeanutServer {
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
 const FONT_PATHS = new Set([
-  "/fonts/google-sans-400.woff2",
-  "/fonts/google-sans-500.woff2",
-  "/fonts/google-sans-600.woff2",
-  "/fonts/google-sans-700.woff2",
+  "/fonts/google-sans.woff2",
+  "/fonts/google-sans-latin-ext.woff2",
+  "/fonts/google-sans-italic.woff2",
+  "/fonts/google-sans-italic-latin-ext.woff2",
 ]);
 
 interface RelayData {
@@ -251,7 +251,10 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   if (request.method === "GET" && FONT_PATHS.has(path)) {
     const font = embeddedAssets?.fonts[path] ?? Bun.file(webPath(`public${path}`));
     return new Response(font, {
-      headers: { "content-type": "font/woff2" },
+      headers: {
+        "content-type": "font/woff2",
+        "cache-control": "public, max-age=31536000, immutable",
+      },
     });
   }
 
