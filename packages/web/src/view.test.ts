@@ -55,13 +55,18 @@ async function createRoom(content: string): Promise<{ roomId: string; agentToken
 
 async function openRoom(content: string): Promise<{ roomId: string; agentToken: string }> {
   const room = await createRoom(content);
-  win = new Window({ url: `${server.url}/${room.roomId}` });
+  await openExistingRoom(room.roomId, cookie);
+  return room;
+}
+
+async function openExistingRoom(roomId: string, sessionCookie: string): Promise<void> {
+  cookie = sessionCookie;
+  win = new Window({ url: `${server.url}/${roomId}` });
   doc = win.document as unknown as Document;
   doc.body.innerHTML = '<div id="app"></div>';
   setGlobals();
   await boot();
   await Bun.sleep(50);
-  return room;
 }
 
 // happy-dom event classes are not the lib.dom ones; the cast keeps
@@ -73,6 +78,12 @@ function click(target: Element): void {
 function pressEnter(target: Element): void {
   target.dispatchEvent(
     new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event,
+  );
+}
+
+function pressEscape(target: Element): void {
+  target.dispatchEvent(
+    new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event,
   );
 }
 
@@ -122,7 +133,76 @@ describe("chat sidebar", () => {
     expect(view.rounds[0].instructions[0].words).toBe("Also cover timeouts.");
   });
 
-  test("the remove control deletes a queued message and the bubble goes away", async () => {
+  test("queued messages use labeled Lucide edit and delete buttons", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    input.value = "Review this one.";
+    pressEnter(input);
+    await Bun.sleep(150);
+
+    const edit = doc.querySelector('.bubble-action[aria-label="Edit"]');
+    const remove = doc.querySelector('.bubble-action[aria-label="Delete"]');
+    expect(edit?.getAttribute("title")).toBeNull();
+    expect(remove?.getAttribute("title")).toBeNull();
+    for (const button of [edit, remove]) {
+      const svg = button?.querySelector("svg");
+      expect(svg?.getAttribute("stroke")).toBe("currentColor");
+      expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
+  test("Enter saves an inline edit and updates the queued bubble", async () => {
+    const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
+    const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    composer.value = "Old words.";
+    pressEnter(composer);
+    await Bun.sleep(150);
+
+    click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
+    const input = doc.querySelector(".inline-edit") as HTMLInputElement;
+    expect(input.value).toBe("Old words.");
+    input.value = "New words.";
+    pressEnter(input);
+    await Bun.sleep(150);
+
+    expect(doc.querySelector(".inline-edit")).toBeNull();
+    expect(doc.querySelector(".bubble.queued .words")?.textContent).toBe("New words.");
+    const response = await realFetch(`${server.url}/api/rooms/${roomId}/state`, {
+      headers: { cookie },
+    });
+    const state = await response.json();
+    expect(state.instructions[0].words).toBe("New words.");
+  });
+
+  test("Escape cancels an inline edit and polling does not replace it", async () => {
+    const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
+    const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    composer.value = "Keep these words.";
+    pressEnter(composer);
+    await Bun.sleep(150);
+
+    click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
+    const input = doc.querySelector(".inline-edit") as HTMLInputElement;
+    input.value = "Unsaved words.";
+    const stateResponse = await realFetch(`${server.url}/api/rooms/${roomId}/state`, {
+      headers: { cookie },
+    });
+    const state = await stateResponse.json();
+    await realFetch(`${server.url}/api/rooms/${roomId}/instructions/${state.instructions[0].id}`, {
+      method: "PATCH",
+      headers: { cookie },
+      body: JSON.stringify({ words: "Words from another refresh." }),
+    });
+    await Bun.sleep(2300);
+
+    expect(doc.querySelector(".inline-edit")).toBe(input);
+    expect(input.value).toBe("Unsaved words.");
+    pressEscape(input);
+    expect(doc.querySelector(".inline-edit")).toBeNull();
+    expect(doc.querySelector(".bubble.queued .words")?.textContent).toBe("Keep these words.");
+  }, 10_000);
+
+  test("the delete button removes a queued message and the bubble goes away", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
     input.value = "Drop this one.";
@@ -130,9 +210,46 @@ describe("chat sidebar", () => {
     await Bun.sleep(150);
     expect(doc.querySelector(".bubble.queued")).not.toBeNull();
 
-    click(doc.querySelector(".bubble .unpin")!);
+    click(doc.querySelector('.bubble-action[aria-label="Delete"]')!);
     await Bun.sleep(150);
     expect(doc.querySelector(".bubble.queued")).toBeNull();
+  });
+
+  test("edit and delete follow author, host, and granted guest rights", async () => {
+    const { roomId } = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ words: "Host note.", anchor: { type: "chat" } }),
+    });
+    const joined = await realFetch(`${server.url}/api/rooms/${roomId}/join`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Sam" }),
+    });
+    const guestCookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const guestState = await joined.json();
+
+    await openExistingRoom(roomId, guestCookie);
+    expect(doc.querySelector(".bubble-actions")).toBeNull();
+
+    await realFetch(`${server.url}/api/rooms/${roomId}/grants`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ participantId: guestState.you.id, canSend: true }),
+    });
+    resetView();
+    await openExistingRoom(roomId, guestCookie);
+    expect(doc.querySelectorAll(".bubble-action")).toHaveLength(2);
+
+    await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie: guestCookie },
+      body: JSON.stringify({ words: "Guest note.", anchor: { type: "chat" } }),
+    });
+    resetView();
+    await openExistingRoom(roomId, hostCookie);
+    expect(doc.querySelectorAll(".bubble-action")).toHaveLength(4);
   });
 
   test("an agent reply renders as an agent bubble with its meta line", async () => {
