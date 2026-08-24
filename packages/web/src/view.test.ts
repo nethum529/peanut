@@ -413,39 +413,6 @@ describe("chat sidebar", () => {
     expect(doc.querySelectorAll(".bubble-action")).toHaveLength(4);
   });
 
-  test("a granted guest can remove an instruction from a stamped card", async () => {
-    const { roomId } = await createRoom("# Plan\n\nfirst paragraph");
-    const hostCookie = cookie;
-    await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
-      method: "POST",
-      headers: { cookie: hostCookie },
-      body: JSON.stringify({
-        words: "Host stamp.",
-        anchor: {
-          type: "stamp",
-          selector: "p:nth-of-type(1)",
-          guard: "first paragraph",
-        },
-      }),
-    });
-    const joined = await realFetch(`${server.url}/api/rooms/${roomId}/join`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Sam" }),
-    });
-    const guestCookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
-    const guestState = await joined.json();
-    await realFetch(`${server.url}/api/rooms/${roomId}/grants`, {
-      method: "POST",
-      headers: { cookie: hostCookie },
-      body: JSON.stringify({ participantId: guestState.you.id, canSend: true }),
-    });
-
-    await openExistingRoom(roomId, guestCookie);
-    click(doc.querySelector(".stamp-toggle")!);
-    click(doc.querySelector("#plan p")!);
-    expect(doc.querySelector(".card .remove")).not.toBeNull();
-  });
-
   test("an agent reply renders with its meta line", async () => {
     const { roomId, agentToken } = await openRoom("# Plan\n\nfirst paragraph");
     const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
@@ -522,6 +489,7 @@ describe("chat sidebar", () => {
 
   test("a stamp composer closes when a click lands outside it", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
+    expect(doc.querySelector(".stamp-toggle")).toBeNull();
     const para = doc.querySelector("#plan p")!;
     click(para);
     expect(doc.querySelector(".composer")).not.toBeNull();
