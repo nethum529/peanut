@@ -490,8 +490,11 @@ function openComposer(
 // The pin gestures: a text selection opens the range composer, and in
 // stamp mode a hover outlines the block while a click stamps it.
 function wireComposer(plan: HTMLElement, state: RoomStateView): void {
-  document.onclick = () => {
+  document.onclick = (event) => {
     closeCard();
+    if (stampMode && !(event.target as HTMLElement).closest(".composer")) {
+      document.querySelector(".composer")?.remove();
+    }
   };
   document.onmouseup = (event) => {
     if (stampMode) return;
