@@ -478,8 +478,16 @@ describe("chat sidebar", () => {
     expect(toggle.getAttribute("aria-label")).toBe("Use light theme");
     expect(toggle.classList.contains("icon-tooltip")).toBe(true);
     expect(toggle.classList.contains("icon-tooltip-below")).toBe(true);
+    expect(toggle.classList.contains("icon-tooltip-end")).toBe(true);
     expect(toggle.querySelector("circle")?.getAttribute("r")).toBe("4");
     expect(toggle.querySelector("svg")?.getAttribute("stroke")).toBe("currentColor");
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const endRule = html.match(/\.icon-tooltip-end::after \{([^}]*)\}/)?.[1] ?? "";
+    expect(endRule).toContain("right: 0");
+    expect(endRule).toContain("left: auto");
+    expect(endRule).toContain("transform: translateY(2px)");
+    expect(html).not.toContain(".icon-tooltip-end::before");
 
     click(toggle);
 

@@ -296,6 +296,16 @@
         transform: translate(-50%, -2px) scale(0.95);
         transform-origin: top center;
       }
+      .icon-tooltip-end::after {
+        right: 0;
+        left: auto;
+        transform: translateY(2px) scale(0.95);
+        transform-origin: bottom right;
+      }
+      .icon-tooltip-below.icon-tooltip-end::after {
+        transform: translateY(-2px) scale(0.95);
+        transform-origin: top right;
+      }
       .bubble-action:last-child::after {
         right: 0;
         left: auto;
@@ -314,6 +324,10 @@
       .icon-tooltip:hover::after,
       .icon-tooltip:focus-visible::after {
         transform: translate(-50%, 0) scale(1);
+      }
+      .icon-tooltip-end:hover::after,
+      .icon-tooltip-end:focus-visible::after {
+        transform: translateY(0) scale(1);
       }
       .bubble-action:last-child:hover::after,
       .bubble-action:last-child:focus-visible::after {
