@@ -82,6 +82,12 @@ describe("room document", () => {
     expect(html).toContain("<h1>Plan</h1>");
     expect(html).toContain("<strong>backoff</strong>");
     expect(html).toContain("body.plan");
+    const planRule = html.match(/body\.plan \{([^}]*)\}/)?.[1] ?? "";
+    expect(planRule).toContain("max-width: 760px");
+    expect(planRule).toContain("margin: 28px auto");
+    expect(planRule).toContain("padding: 32px 40px");
+    expect(planRule).toContain("border: 1px solid var(--document-line)");
+    expect(planRule).toContain("border-radius: 12px");
     expect(html.match(/href="\/overlay\.css"/g)).toHaveLength(1);
     expect(html.match(/src="\/overlay\.js"/g)).toHaveLength(1);
     expect(html.indexOf('href="/overlay.css"')).toBeLessThan(html.indexOf("</body>"));
@@ -98,6 +104,7 @@ describe("room document", () => {
     const html = await response.text();
     expect(html).toContain('<style>.x{color:red}</style>');
     expect(html).toContain("<script>window.answer=42</script>");
+    expect(html).not.toContain("body.plan");
     expect(html).toContain('<link rel="stylesheet" href="/overlay.css">');
     expect(html).toContain('<script src="/overlay.js"></script>\n</body>');
 

@@ -54,14 +54,17 @@ function setGlobals(): void {
   }) as typeof fetch;
 }
 
-async function createRoom(content: string): Promise<{
+async function createRoom(
+  content: string,
+  contentType: "markdown" | "html" = "markdown",
+): Promise<{
   roomId: string;
   agentToken: string;
   participant: { id: string; name: string; color: string };
 }> {
   const created = await realFetch(`${server.url}/api/rooms`, {
     method: "POST",
-    body: JSON.stringify({ title: "Chat test", content, hostName: "Nethum" }),
+    body: JSON.stringify({ title: "Chat test", content, contentType, hostName: "Nethum" }),
   });
   cookie = (created.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
   const body = await created.json();
@@ -727,19 +730,39 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".permission-switch")).toBeNull();
   });
 
-  test("the room layout stacks at its content breakpoint and keeps logical margins", async () => {
+  test("the document frame fills its column and owns document scrolling", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const bodyRule = html.match(/\.body \{([^}]*)\}/)?.[1] ?? "";
     const leftRule = html.match(/\.left \{([^}]*)\}/)?.[1] ?? "";
-    const planShellRule = html.match(/\.plan-shell \{([^}]*)\}/)?.[1] ?? "";
+    const frameRule = html.match(/\.plan-frame \{([^}]*)\}/)?.[1] ?? "";
     const narrow = html.match(/@media \(max-width: 840px\) \{([\s\S]*?)\n      \}/)?.[1] ?? "";
 
     expect(bodyRule).toContain("grid-template-columns: minmax(0, 1fr) 320px");
-    expect(leftRule).toContain("padding-inline: 24px");
-    expect(planShellRule).toContain("height: calc(100vh - 53px)");
+    expect(bodyRule).toContain("height: calc(100vh - 53px)");
+    expect(bodyRule).toContain("overflow: hidden");
+    expect(leftRule).toContain("height: 100%");
+    expect(leftRule).toContain("padding: 0");
+    expect(leftRule).toContain("overflow: hidden");
+    expect(frameRule).toContain("width: 100%");
+    expect(frameRule).toContain("height: 100%");
+    expect(frameRule).toContain("margin: 0");
+    expect(frameRule).toContain("border: 0");
+    expect(frameRule).toContain("border-radius: 0");
+    expect(frameRule).toContain("box-shadow: none");
+    expect(frame().parentElement?.classList.contains("left")).toBe(true);
+    expect(doc.querySelector(".plan-shell")).toBeNull();
     expect(html).toContain("border-inline-start: 1px solid var(--line)");
     expect(html).not.toContain("border-left: 1px solid var(--line)");
     expect(narrow).toContain("grid-template-columns: minmax(0, 1fr)");
+  });
+
+  test("HTML documents use the same edge-to-edge frame", async () => {
+    const room = await createRoom("<!doctype html><html><body><main>Demo</main></body></html>", "html");
+    await openExistingRoom(room.roomId, cookie);
+
+    expect(frame().parentElement?.classList.contains("left")).toBe(true);
+    expect(doc.querySelector(".plan-shell")).toBeNull();
   });
 
   test("theme starts dark and the sun toggle saves a light choice", async () => {
