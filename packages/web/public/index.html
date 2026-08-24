@@ -274,6 +274,7 @@
       .sidebar {
         position: sticky;
         top: 53px;
+        min-width: 0;
         height: calc(100vh - 53px);
         max-height: calc(100vh - 53px);
         overflow-y: auto;
@@ -526,10 +527,15 @@
       }
       .sidebar-controls {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        min-width: 0;
         gap: 8px;
       }
       .message-composer {
         display: flex;
+        width: 100%;
+        min-width: 0;
         gap: 8px;
         align-items: stretch;
       }
