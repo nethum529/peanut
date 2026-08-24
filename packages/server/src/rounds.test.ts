@@ -324,6 +324,28 @@ describe("reply and end", () => {
     expect(view.rounds[0].reply.message).toBe(exact);
   });
 
+  test("reply meta over 500 characters is refused and the exact limit lands", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    await pin(roomId, hostCookie, "Do it.");
+    await flush(roomId, hostCookie);
+    const refused = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ message: "Done.", meta: "x".repeat(501) }),
+    });
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).error).toBe("reply_meta_too_long");
+    const exact = "x".repeat(500);
+    const accepted = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ message: "Done.", meta: exact }),
+    });
+    expect(accepted.status).toBe(201);
+    const view = await state(roomId, hostCookie);
+    expect(view.rounds[0].reply.meta).toBe(exact);
+  });
+
   test("a reply with no round is refused", async () => {
     const { roomId, agentToken } = await setup();
     const response = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {

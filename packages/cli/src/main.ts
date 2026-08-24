@@ -301,6 +301,9 @@ async function reply(flags: Flags): Promise<never> {
     if (body.error === "reply_too_long") {
       fail(`The reply was refused: ${body.message}. Send a shorter reply, under 100 words.`);
     }
+    if (body.error === "reply_meta_too_long") {
+      fail(`The reply was refused: ${body.message}. Send shorter meta, at most 500 characters.`);
+    }
     fail(`The reply was refused (${response.status}).`);
   }
   console.log("Reply sent. Waiting for the next round...");
