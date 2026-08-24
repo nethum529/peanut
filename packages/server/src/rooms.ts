@@ -112,6 +112,16 @@ export class RoomError extends Error {
   }
 }
 
+// The moderation rule for queued instructions: the author changes
+// their own, the host and granted guests (the admin role) change any.
+function canModerate(participant: Participant, instruction: Instruction): boolean {
+  return (
+    participant.isHost ||
+    participant.canSend ||
+    instruction.authorSessionId === participant.sessionId
+  );
+}
+
 export class RoomStore {
   private rooms = new Map<string, Room>();
 
@@ -255,10 +265,36 @@ export class RoomStore {
     if (!instruction) {
       throw new RoomError("instruction_not_found", `no instruction ${instructionId}`);
     }
-    if (!remover.isHost && instruction.authorSessionId !== remover.sessionId) {
-      throw new RoomError("not_allowed", "only the author or the host can remove it");
+    if (!canModerate(remover, instruction)) {
+      throw new RoomError("not_allowed", "only the author, the host, or a granted guest can remove it");
     }
     room.instructions.delete(instructionId);
+  }
+
+  // Editing follows the same rights as removal. Only queued
+  // instructions change; a flushed round is history.
+  editInstruction(
+    roomId: string,
+    sessionId: string | undefined,
+    instructionId: string,
+    words: string,
+  ): Instruction {
+    const room = this.getRoom(roomId);
+    if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");
+    const editor = this.participant(roomId, sessionId);
+    const instruction = room.instructions.get(instructionId);
+    if (!instruction) {
+      throw new RoomError("instruction_not_found", `no instruction ${instructionId}`);
+    }
+    if (!canModerate(editor, instruction)) {
+      throw new RoomError("not_allowed", "only the author, the host, or a granted guest can edit it");
+    }
+    const trimmed = words.trim();
+    if (!trimmed || trimmed.length > 2000) {
+      throw new RoomError("bad_instruction", "instruction words must be 1 to 2000 chars");
+    }
+    instruction.words = trimmed;
+    return instruction;
   }
 
   // Flushing takes the whole pinned list as one numbered round. Curation

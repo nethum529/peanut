@@ -149,6 +149,17 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     store.removeInstruction(roomId, sessionFromCookie(request, roomId), removeMatch[2]!);
     return json({ removed: true });
   }
+  if (request.method === "PATCH" && removeMatch) {
+    const roomId = removeMatch[1]!;
+    const body = await readJson(request);
+    store.editInstruction(
+      roomId,
+      sessionFromCookie(request, roomId),
+      removeMatch[2]!,
+      stringField(body, "words"),
+    );
+    return json({ edited: true });
+  }
 
   const flushMatch = path.match(/^\/api\/rooms\/([^/]+)\/flush$/);
   if (request.method === "POST" && flushMatch) {
