@@ -155,7 +155,7 @@ function render(state: RoomStateView): void {
   const brand = el("span", "wordmark", "Peanut");
   const title = el("span", "title", state.title || "Untitled review");
   const people = el("div", "people");
-  const icon = iconButton("Participants", USERS_ICON, "people-icon");
+  const icon = iconButton("Participants", USERS_ICON, "people-icon icon-tooltip-below");
   const menu = el("div", "people-menu");
   const panel = el("div", "people-panel");
   for (const participant of state.participants) {

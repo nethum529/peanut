@@ -45,12 +45,12 @@
          transition, the exit timer is its delay, and visibility flips
          after the fade so a hidden menu takes no hover. The top
          padding is a transparent bridge that keeps the hover alive
-         between the icon and the panel. */
+         between the icon and the panel, with room for the tooltip. */
       .people-menu {
         position: absolute;
         top: 100%;
         right: -8px;
-        padding-top: 10px;
+        padding-top: 36px;
         opacity: 0;
         visibility: hidden;
         transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
@@ -205,6 +205,16 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
         transform: translate(-50%, 2px) scale(0.95);
         transform-origin: bottom center;
+      }
+      .icon-tooltip-below::before {
+        top: calc(100% + 3px);
+        bottom: auto;
+      }
+      .icon-tooltip-below::after {
+        top: calc(100% + 6px);
+        bottom: auto;
+        transform: translate(-50%, -2px) scale(0.95);
+        transform-origin: top center;
       }
       .icon-tooltip:hover::before, .icon-tooltip:hover::after,
       .icon-tooltip:focus-visible::before, .icon-tooltip:focus-visible::after {

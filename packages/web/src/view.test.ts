@@ -374,6 +374,7 @@ describe("chat sidebar", () => {
     const icon = doc.querySelector(".people-icon");
     expect(icon?.tagName).toBe("BUTTON");
     expect(icon?.classList.contains("icon-tooltip")).toBe(true);
+    expect(icon?.classList.contains("icon-tooltip-below")).toBe(true);
     expect(icon?.getAttribute("aria-label")).toBe("Participants");
     expect(icon?.getAttribute("title")).toBeNull();
     expect(icon?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
