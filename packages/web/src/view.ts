@@ -41,6 +41,8 @@ const POLL_MS = 2000;
 const CURSOR_SEND_MS = 40;
 const CURSOR_STALE_MS = 3000;
 const CURSOR_FADE_MS = 180;
+const TOAST_VISIBLE_MS = 3000;
+const TOAST_EXIT_MS = 400;
 
 interface CursorMessage {
   type: "cursor";
@@ -157,6 +159,9 @@ const remoteCursors = new Map<string, RemoteCursor>();
 let planFrame: HTMLIFrameElement | null = null;
 let overlayReady = false;
 let protocolWindow: Window | null = null;
+let toastRegion: HTMLElement | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+let toastRemoveTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSnapshots = new Map<string, (html: string) => void>();
 
 function roomIdFromPath(): string {
@@ -172,6 +177,38 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function ensureToastRegion(): HTMLElement {
+  if (toastRegion?.isConnected) return toastRegion;
+  toastRegion = el("div", "toast-region");
+  toastRegion.setAttribute("role", "status");
+  toastRegion.setAttribute("aria-live", "polite");
+  toastRegion.setAttribute("aria-atomic", "true");
+  document.body.append(toastRegion);
+  return toastRegion;
+}
+
+function showToast(message: string): void {
+  const region = ensureToastRegion();
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  if (toastRemoveTimer !== null) clearTimeout(toastRemoveTimer);
+  toastTimer = null;
+  toastRemoveTimer = null;
+
+  region.classList.remove("is-visible");
+  region.replaceChildren(el("div", "chrome-toast", message));
+  void region.offsetHeight;
+  window.requestAnimationFrame(() => region.classList.add("is-visible"));
+
+  toastTimer = setTimeout(() => {
+    region.classList.remove("is-visible");
+    toastTimer = null;
+    toastRemoveTimer = setTimeout(() => {
+      region.replaceChildren();
+      toastRemoveTimer = null;
+    }, TOAST_EXIT_MS);
+  }, TOAST_VISIBLE_MS);
 }
 
 function showMessage(title: string, detail: string): void {
@@ -597,7 +634,6 @@ function renderSendPermissionSwitch(
 ): HTMLButtonElement {
   const button = el("button", "permission-switch");
   const thumb = el("span", "permission-switch-thumb");
-  let pending = false;
   button.type = "button";
   button.setAttribute("role", "switch");
   button.setAttribute("aria-label", `Allow ${participant.name} to send`);
@@ -607,12 +643,11 @@ function renderSendPermissionSwitch(
   button.append(thumb);
 
   button.onclick = async () => {
-    if (pending) return;
-    pending = true;
+    if (button.getAttribute("aria-busy") === "true") return;
     const previous = button.getAttribute("aria-checked") === "true";
     const canSend = !previous;
-    setPermissionSwitchChecked(button, canSend);
     button.setAttribute("aria-busy", "true");
+    setPermissionSwitchChecked(button, canSend);
     button.focus();
     try {
       const response = await postJson(`/api/rooms/${state.id}/grants`, {
@@ -625,12 +660,16 @@ function renderSendPermissionSwitch(
       }
       participant.canSend = canSend;
       lastRendered = JSON.stringify(state);
+      showToast(
+        canSend
+          ? `${participant.name} can now send to the agent.`
+          : `${participant.name} now needs approval to send.`,
+      );
     } catch {
       setPermissionSwitchChecked(button, previous);
     } finally {
       button.removeAttribute("aria-busy");
-      button.focus();
-      pending = false;
+      if (button.isConnected) button.focus();
     }
   };
   button.onkeydown = (event) => {
@@ -893,14 +932,27 @@ async function refresh(roomId: string): Promise<void> {
   // poll applies the room state after the pointer and focus leave.
   const people = document.querySelector(".people");
   if (people && (people.matches(":hover") || people.contains(document.activeElement))) return;
+  const guestPermissionChanged =
+    currentState !== null &&
+    !state.you.isHost &&
+    currentState.you.id === state.you.id &&
+    currentState.you.canSend !== state.you.canSend;
   lastRendered = serialized;
   render(state);
+  if (guestPermissionChanged) {
+    showToast(
+      state.you.canSend
+        ? "You can now send to the agent."
+        : "You now need approval to send.",
+    );
+  }
   if (state.status === "ended") disconnectRelay();
   else connectRelay(roomId);
 }
 
 function start(roomId: string, state: RoomStateView): void {
   installChromeProtocol();
+  ensureToastRegion();
   lastRendered = JSON.stringify(state);
   render(state);
   if (state.status === "ended") disconnectRelay();
@@ -914,8 +966,12 @@ function start(roomId: string, state: RoomStateView): void {
 export function resetView(): void {
   if (pollTimer !== null) clearInterval(pollTimer);
   if (cursorSendTimer !== null) clearTimeout(cursorSendTimer);
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  if (toastRemoveTimer !== null) clearTimeout(toastRemoveTimer);
   pollTimer = null;
   cursorSendTimer = null;
+  toastTimer = null;
+  toastRemoveTimer = null;
   pendingCursor = null;
   lastCursorSentAt = 0;
   currentState = null;
@@ -925,6 +981,8 @@ export function resetView(): void {
   pendingSnapshots.clear();
   if (protocolWindow) protocolWindow.removeEventListener("message", handleOverlayMessage);
   protocolWindow = null;
+  toastRegion?.remove();
+  toastRegion = null;
   disconnectRelay();
   lastRendered = "";
 }

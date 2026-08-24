@@ -599,6 +599,36 @@ describe("chat sidebar", () => {
     expect(menuTooltipRule).toContain("visibility: hidden");
   });
 
+  test("different joiners keep their own colors on participant dots", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const sam = await joinRoom(room.roomId, "Sam");
+    const alex = await joinRoom(room.roomId, "Alex");
+    await openExistingRoom(room.roomId, hostCookie);
+
+    const dotFor = (name: string) =>
+      [...doc.querySelectorAll(".person-row")]
+        .find((row) => row.querySelector(".person-name")?.textContent === name)
+        ?.querySelector(".person-dot") as HTMLElement;
+    const samDot = dotFor("Sam");
+    const alexDot = dotFor("Alex");
+
+    expect(sam.participant.color).not.toBe(alex.participant.color);
+    expect(samDot.classList.contains("author-dot")).toBe(true);
+    expect(alexDot.classList.contains("author-dot")).toBe(true);
+    expect(samDot.style.getPropertyValue("--author-color")).toBe(sam.participant.color);
+    expect(alexDot.style.getPropertyValue("--author-color")).toBe(alex.participant.color);
+    expect(samDot.style.getPropertyValue("--author-color")).not.toBe(
+      alexDot.style.getPropertyValue("--author-color"),
+    );
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const dotRule = html.match(/\.person-dot\.author-dot \{([\s\S]*?)\n      \}/)?.[1] ?? "";
+    expect(dotRule).toContain("background-color: color-mix(");
+    expect(dotRule).toContain("var(--author-color)");
+    expect(dotRule).toContain("white var(--author-lighten)");
+  });
+
   test("a host grants and revokes guest send permission from the people menu", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
     const hostCookie = cookie;
@@ -619,6 +649,7 @@ describe("chat sidebar", () => {
       "true",
     );
 
+    click(permission);
     click(permission);
     expect(permission.getAttribute("aria-checked")).toBe("true");
     expect(permission.classList.contains("is-checked")).toBe(true);
@@ -642,6 +673,11 @@ describe("chat sidebar", () => {
     expect(permission.classList.contains("is-checked")).toBe(true);
     expect(permission.getAttribute("aria-busy")).toBeNull();
     expect(doc.activeElement).toBe(permission);
+    const toastRegion = doc.querySelector(".toast-region");
+    expect(toastRegion?.getAttribute("role")).toBe("status");
+    expect(toastRegion?.getAttribute("aria-live")).toBe("polite");
+    expect(toastRegion?.getAttribute("aria-atomic")).toBe("true");
+    expect(toastRegion?.textContent).toBe("Sam can now send to the agent.");
 
     expect(pressSpace(permission)).toBe(true);
     expect(permission.getAttribute("aria-checked")).toBe("false");
@@ -662,20 +698,37 @@ describe("chat sidebar", () => {
     );
     expect(permission.getAttribute("aria-busy")).toBeNull();
     expect(doc.activeElement).toBe(permission);
+    expect(toastRegion?.textContent).toBe("Sam now needs approval to send.");
 
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const checkedRule = html.match(/\.permission-switch\.is-checked \{([^}]*)\}/)?.[1] ?? "";
     const busyRule =
       html.match(/\.permission-switch\[aria-busy="true"\] \{([^}]*)\}/)?.[1] ?? "";
     const thumbRule = html.match(/\.permission-switch-thumb \{([^}]*)\}/)?.[1] ?? "";
+    const toastRegionRule = html.match(/\.toast-region \{([^}]*)\}/)?.[1] ?? "";
+    const toastRule = html.match(/\.chrome-toast \{([^}]*)\}/)?.[1] ?? "";
     expect(checkedRule).toContain("background: var(--accent-text)");
     expect(busyRule).toContain("opacity: 0.55");
     expect(busyRule).toContain("cursor: wait");
     expect(thumbRule).not.toContain("transition");
+    expect(toastRegionRule).toContain("inset-inline-end: 20px");
+    expect(toastRegionRule).toContain("bottom: 20px");
+    expect(toastRule).toContain("background: var(--surface)");
+    expect(toastRule).toContain("color: var(--ink)");
+    expect(toastRule).toContain("border: 1px solid var(--line)");
+    expect(toastRule).toContain("box-shadow: 0 4px 18px var(--shadow)");
+    expect(toastRule).not.toContain("transform");
+    expect(toastRule).not.toContain("transition");
     expect(html).toMatch(
       /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\.permission-switch-thumb \{\s*transition: transform 150ms cubic-bezier\(0\.77, 0, 0\.175, 1\);/,
     );
-  });
+    expect(html).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\.chrome-toast \{[\s\S]*?transform: translateY\(8px\);[\s\S]*?opacity 400ms ease,[\s\S]*?transform 400ms ease/,
+    );
+
+    await Bun.sleep(3450);
+    expect(toastRegion?.textContent).toBe("");
+  }, 7000);
 
   test("a failed send permission change restores the switch", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
@@ -734,6 +787,26 @@ describe("chat sidebar", () => {
     expect(doc.querySelectorAll(".person-row")).toHaveLength(2);
     expect(doc.querySelector(".permission-switch")).toBeNull();
   });
+
+  test("a guest sees a toast when the host grants send permission", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, guest.cookie);
+
+    const response = await realFetch(`${server.url}/api/rooms/${room.roomId}/grants`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ participantId: guest.participant.id, canSend: true }),
+    });
+    expect(response.ok).toBe(true);
+
+    await Bun.sleep(2200);
+    expect(doc.querySelector(".toast-region")?.textContent).toBe(
+      "You can now send to the agent.",
+    );
+    expect(doc.querySelector(".permission-switch")).toBeNull();
+  }, 6000);
 
   test("the document frame fills its column and owns document scrolling", async () => {
     await openRoom("# Plan\n\nfirst paragraph");

@@ -94,6 +94,30 @@
         color: var(--ink);
         background: var(--paper);
       }
+      .toast-region {
+        position: fixed;
+        inset-inline-end: 20px;
+        bottom: 20px;
+        z-index: 50;
+        max-width: min(360px, calc(100vw - 40px));
+        pointer-events: none;
+      }
+      .chrome-toast {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 4px 18px var(--shadow);
+        font-size: 14px;
+        line-height: 1.35;
+        opacity: 0;
+        visibility: hidden;
+      }
+      .toast-region.is-visible .chrome-toast {
+        opacity: 1;
+        visibility: visible;
+      }
       .toolbar {
         position: sticky;
         top: 0;
@@ -221,7 +245,19 @@
         gap: 2px;
       }
       .person-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 14px; white-space: nowrap; }
-      .person-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+      .person-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+      .person-dot.author-dot {
+        background-color: color-mix(
+          in srgb,
+          var(--author-color),
+          white var(--author-lighten)
+        );
+      }
       .person-name { margin-inline-end: auto; }
       .permission-switch {
         position: relative;
@@ -452,6 +488,20 @@
         transform: translateY(0) scale(1);
       }
       @media (prefers-reduced-motion: no-preference) {
+        .chrome-toast {
+          transform: translateY(8px);
+          transition:
+            opacity 400ms ease,
+            transform 400ms ease,
+            visibility 0s linear 400ms;
+        }
+        .toast-region.is-visible .chrome-toast {
+          transform: translateY(0);
+          transition:
+            opacity 400ms ease,
+            transform 400ms ease,
+            visibility 0s linear;
+        }
         .people-menu {
           transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
         }
@@ -638,9 +688,6 @@
       .error { color: var(--danger); min-height: 1em; margin: 0; }
       .author-text {
         color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
-      }
-      .author-dot {
-        background: color-mix(in srgb, var(--author-color), white var(--author-lighten));
       }
       .bubble.user.author-border {
         border-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
