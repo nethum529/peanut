@@ -35,4 +35,11 @@ const compile = Bun.spawn(
   ],
   { stdout: "inherit", stderr: "inherit" },
 );
-process.exit(await compile.exited);
+const exitCode = await compile.exited;
+if (exitCode === 0) {
+  await Bun.write(
+    `${root}dist/NOTICE`,
+    Bun.file(`${root}packages/web/public/fonts/OFL.txt`),
+  );
+}
+process.exit(exitCode);

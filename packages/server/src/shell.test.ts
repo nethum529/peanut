@@ -19,6 +19,13 @@ describe("web shell", () => {
     const body = await response.text();
     expect(body).toContain('<div id="app">');
     expect(body).toContain("/app.js");
+    expect(body).toContain('font-family: "Google Sans", system-ui, sans-serif');
+    expect(body).toContain('src: url("/fonts/google-sans.woff2")');
+    expect(body).toContain("font-weight: 400 700;");
+    expect(body).toContain("font-style: italic;");
+    expect(body).toContain("unicode-range:");
+    expect(body).not.toContain("google-sans-400.woff2");
+    expect(body).not.toContain("fonts.googleapis.com");
   });
 
   test("the client bundle is served as javascript", async () => {
@@ -27,6 +34,24 @@ describe("web shell", () => {
     expect(response.headers.get("content-type")).toContain("javascript");
     const body = await response.text();
     expect(body).toContain("renderMarkdown");
+  });
+
+  test("self-hosted fonts are served as woff2", async () => {
+    const paths = [
+      "google-sans.woff2",
+      "google-sans-latin-ext.woff2",
+      "google-sans-italic.woff2",
+      "google-sans-italic-latin-ext.woff2",
+    ];
+    for (const path of paths) {
+      const response = await fetch(`${server.url}/fonts/${path}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("font/woff2");
+      expect(response.headers.get("cache-control")).toBe(
+        "public, max-age=31536000, immutable",
+      );
+      expect(new TextDecoder().decode((await response.bytes()).slice(0, 4))).toBe("wOF2");
+    }
   });
 
   test("api paths never fall through to the shell", async () => {
