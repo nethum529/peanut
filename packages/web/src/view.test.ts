@@ -148,13 +148,17 @@ describe("chat sidebar", () => {
 
   test("queued icon buttons use the shared tooltip class and accessible labels", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
-    const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    click(doc.querySelector("#plan p")!);
+    const input = doc.querySelector(".composer input") as HTMLInputElement;
     input.value = "Review this one.";
     pressEnter(input);
     await Bun.sleep(150);
 
     const edit = doc.querySelector('.bubble-action[aria-label="Edit"]');
     const remove = doc.querySelector('.bubble-action[aria-label="Delete"]');
+    const footer = edit?.closest(".bubble-footer");
+    expect(footer?.querySelector(".hint")).not.toBeNull();
+    expect(footer?.querySelector(".bubble-actions")).not.toBeNull();
     expect(edit?.getAttribute("title")).toBeNull();
     expect(remove?.getAttribute("title")).toBeNull();
     for (const button of [edit, remove]) {

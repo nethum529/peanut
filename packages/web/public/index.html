@@ -195,7 +195,7 @@
         overflow-y: auto;
         flex: 1;
         min-height: 120px;
-        padding: 30px 2px 2px;
+        padding: 2px;
       }
       .bubble {
         max-width: 85%;
@@ -232,16 +232,31 @@
       .bubble.working { color: var(--muted); }
       .bubble.queued { opacity: 0.75; border-style: dashed; }
       .bubble.queued.mine { border-style: solid; }
-      .bubble.actionable { padding-top: 34px; }
-      .bubble.actionable.editing { padding-top: 8px; }
+      .bubble-footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+      }
+      .bubble-footer .hint { flex: 1; min-width: 0; }
       .bubble-actions {
-        position: absolute;
-        top: 4px;
-        right: 4px;
         display: flex;
         gap: 4px;
+        margin-left: auto;
+        opacity: 0;
+        pointer-events: none;
       }
-      .bubble.editing .bubble-actions { display: none; }
+      .bubble:focus-within .bubble-actions {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      @media (hover: hover) {
+        .bubble:hover .bubble-actions {
+          opacity: 1;
+          pointer-events: auto;
+        }
+      }
+      .bubble.editing .bubble-footer { display: none; }
       .bubble-action {
         display: grid;
         place-items: center;
@@ -299,6 +314,12 @@
         transform: translate(-50%, -2px) scale(0.95);
         transform-origin: top center;
       }
+      .bubble-action:last-child::after {
+        right: 0;
+        left: auto;
+        transform: translateY(2px) scale(0.95);
+        transform-origin: bottom right;
+      }
       .icon-tooltip:hover::before, .icon-tooltip:hover::after,
       .icon-tooltip:focus-visible::before, .icon-tooltip:focus-visible::after {
         opacity: 1;
@@ -312,7 +333,16 @@
       .icon-tooltip:focus-visible::after {
         transform: translate(-50%, 0) scale(1);
       }
+      .bubble-action:last-child:hover::after,
+      .bubble-action:last-child:focus-visible::after {
+        transform: translateY(0) scale(1);
+      }
       @media (prefers-reduced-motion: no-preference) {
+        .bubble-actions {
+          transition-property: opacity;
+          transition-duration: 120ms;
+          transition-timing-function: ease-out;
+        }
         .icon-tooltip::before, .icon-tooltip::after {
           transition-property: opacity, transform, visibility;
           transition-duration: 100ms, 100ms, 0ms;

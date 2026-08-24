@@ -383,7 +383,9 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
     );
     bubble.classList.add("queued");
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
-      bubble.classList.add("actionable");
+      const footer = el("div", "bubble-footer");
+      const hint = bubble.querySelector(".hint");
+      if (hint) footer.append(hint);
       const actions = el("div", "bubble-actions");
       const edit = iconButton("Edit", PENCIL_ICON, "bubble-action");
       const remove = iconButton("Delete", TRASH_ICON, "bubble-action");
@@ -454,7 +456,8 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
         refresh(state.id);
       };
       actions.append(edit, remove);
-      bubble.append(actions);
+      footer.append(actions);
+      bubble.append(footer);
     }
     log.append(bubble);
   }
