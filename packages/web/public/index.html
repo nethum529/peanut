@@ -4,13 +4,41 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Peanut</title>
+    <script>
+      const savedTheme = localStorage.getItem("theme");
+      document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark";
+    </script>
     <style>
       :root {
+        color-scheme: dark;
+        --accent: #aeb4ff;
+        --ink: #f0f1f5;
+        --muted: #aeb3c1;
+        --line: #676d80;
+        --paper: #17181f;
+        --surface: #20222b;
+        --on-accent: #17181f;
+        --danger: #ff9b9b;
+        --shadow: rgba(0, 0, 0, 0.36);
+        --pin-background: rgba(174, 180, 255, 0.18);
+        --tooltip-background: #171717;
+        --tooltip-ink: #fafafa;
+        --tooltip-shadow: rgba(0, 0, 0, 0.18);
+        --author-lighten: 45%;
+      }
+      [data-theme="light"] {
+        color-scheme: light;
         --accent: #5a5f9e;
         --ink: #2b2e3a;
         --muted: #747b8c;
         --line: #d9dce4;
         --paper: #f5f6f9;
+        --surface: #fff;
+        --on-accent: #fff;
+        --danger: #a33;
+        --shadow: rgba(43, 46, 58, 0.12);
+        --pin-background: rgba(90, 95, 158, 0.14);
+        --author-lighten: 0%;
       }
       * { box-sizing: border-box; }
       body {
@@ -24,7 +52,7 @@
         align-items: center;
         gap: 16px;
         padding: 10px 20px;
-        background: #fff;
+        background: var(--surface);
         border-bottom: 1px solid var(--line);
       }
       .wordmark { font-weight: 700; color: var(--accent); }
@@ -33,6 +61,21 @@
       .people-icon { display: grid; place-items: center; padding: 4px; color: var(--muted); }
       .people-icon svg { width: 20px; height: 20px; }
       .people:hover .people-icon { color: var(--accent); }
+      .theme-toggle {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .theme-toggle:hover { color: var(--accent); }
+      .theme-toggle:focus-visible { outline-offset: 2px; }
+      .theme-toggle svg { width: 20px; height: 20px; }
       /* Hover intent without scripts: the fade is an opacity
          transition, the exit timer is its delay, and visibility flips
          after the fade so a hidden menu takes no hover. The top
@@ -54,10 +97,10 @@
         transition: opacity 160ms ease;
       }
       .people-panel {
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 10px;
-        box-shadow: 0 4px 14px rgba(43, 46, 58, 0.12);
+        box-shadow: 0 4px 14px var(--shadow);
         padding: 8px;
         min-width: 170px;
         display: flex;
@@ -89,7 +132,7 @@
         display: flex;
         flex-direction: column;
         gap: 16px;
-        background: #fff;
+        background: var(--surface);
         border-left: 1px solid var(--line);
         min-height: calc(100vh - 45px);
       }
@@ -123,13 +166,13 @@
       .bubble.user {
         align-self: flex-end;
         border-bottom-right-radius: 4px;
-        background: #fff;
+        background: var(--surface);
         border: 1.5px solid var(--line);
       }
       .bubble.user.mine {
         background: var(--accent);
         border-color: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
       }
       .bubble.agent {
         align-self: flex-start;
@@ -159,7 +202,7 @@
         height: 24px;
         border-radius: 6px;
         border: 1px solid var(--line);
-        background: #fff;
+        background: var(--surface);
         color: var(--muted);
         cursor: pointer;
         padding: 0;
@@ -172,7 +215,7 @@
         position: absolute;
         left: 50%;
         z-index: 2;
-        background: #171717;
+        background: var(--tooltip-background);
         opacity: 0;
         pointer-events: none;
         visibility: hidden;
@@ -189,12 +232,12 @@
         bottom: calc(100% + 6px);
         padding: 5px 7px;
         border-radius: 4px;
-        color: #fafafa;
+        color: var(--tooltip-ink);
         font-size: 12px;
         font-weight: 500;
         line-height: 1;
         white-space: nowrap;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        box-shadow: 0 2px 8px var(--tooltip-shadow);
         transform: translate(-50%, 2px) scale(0.95);
         transform-origin: bottom center;
       }
@@ -237,6 +280,7 @@
         padding: 5px 7px;
         border: 1px solid var(--line);
         border-radius: 4px;
+        background: var(--surface);
         color: var(--ink);
         font: inherit;
         line-height: inherit;
@@ -264,6 +308,8 @@
         padding: 8px 10px;
         border: 1px solid var(--line);
         border-radius: 12px;
+        background: var(--surface);
+        color: var(--ink);
         font: inherit;
         font-size: 14px;
       }
@@ -272,7 +318,7 @@
         border: 0;
         border-radius: 10px;
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
         cursor: pointer;
       }
       .verdict-row {
@@ -290,7 +336,8 @@
         margin-bottom: 8px;
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: #fff;
+        background: var(--surface);
+        color: var(--ink);
       }
       .send-button {
         width: 100%;
@@ -298,7 +345,7 @@
         border: 0;
         border-radius: 6px;
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
         font-size: 15px;
         cursor: pointer;
       }
@@ -306,10 +353,10 @@
       .grant-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; }
       .end-button {
         padding: 8px;
-        border: 1px solid #a33;
+        border: 1px solid var(--danger);
         border-radius: 6px;
-        background: #fff;
-        color: #a33;
+        background: var(--surface);
+        color: var(--danger);
         cursor: pointer;
         margin-top: auto;
       }
@@ -317,7 +364,7 @@
         max-width: 760px;
         margin: 28px auto;
         padding: 32px 40px;
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 8px;
         line-height: 1.6;
@@ -335,7 +382,7 @@
         max-width: 380px;
         margin: 15vh auto;
         padding: 32px;
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 8px;
         text-align: center;
@@ -345,6 +392,8 @@
         padding: 10px 12px;
         border: 1px solid var(--line);
         border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink);
         font-size: 15px;
       }
       .join button {
@@ -352,21 +401,21 @@
         border: 0;
         border-radius: 6px;
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
         font-size: 15px;
         cursor: pointer;
       }
-      .error { color: #a33; min-height: 1em; margin: 0; }
+      .error { color: var(--danger); min-height: 1em; margin: 0; }
       .stamp-toggle {
         padding: 4px 12px;
         border: 1px solid var(--accent);
         border-radius: 999px;
-        background: #fff;
+        background: var(--surface);
         color: var(--accent);
         cursor: pointer;
         font-size: 13px;
       }
-      .stamp-toggle.on { background: var(--accent); color: #fff; }
+      .stamp-toggle.on { background: var(--accent); color: var(--on-accent); }
       .stamp-hover {
         outline: 2px solid var(--accent);
         outline-offset: 4px;
@@ -382,7 +431,7 @@
         cursor: pointer;
       }
       mark.pin {
-        background: rgba(90, 95, 158, 0.14);
+        background: var(--pin-background);
         text-decoration: underline;
         text-decoration-thickness: 2px;
         text-underline-offset: 3px;
@@ -393,10 +442,10 @@
         gap: 8px;
         align-items: center;
         padding: 8px;
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 6px;
-        box-shadow: 0 4px 14px rgba(43, 46, 58, 0.12);
+        box-shadow: 0 4px 14px var(--shadow);
         z-index: 10;
       }
       .composer input {
@@ -404,17 +453,34 @@
         padding: 6px 8px;
         border: 1px solid var(--line);
         border-radius: 4px;
+        background: var(--surface);
+        color: var(--ink);
       }
       .composer button, .remove {
         padding: 6px 10px;
         border: 0;
         border-radius: 4px;
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
         cursor: pointer;
       }
       .instruction { display: flex; gap: 8px; align-items: baseline; }
       .instruction .author { font-weight: 600; }
+      .author-text {
+        color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
+      .author-dot {
+        background: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
+      .bubble.user.author-border {
+        border-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
+      .author-mark {
+        text-decoration-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
+      .author-outline {
+        outline-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
       .ended {
         text-align: center;
         color: var(--muted);

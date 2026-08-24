@@ -53,15 +53,23 @@ async function createRoom(content: string): Promise<{ roomId: string; agentToken
   return { roomId: body.roomId, agentToken: body.agentToken };
 }
 
-async function openRoom(content: string): Promise<{ roomId: string; agentToken: string }> {
+async function openRoom(
+  content: string,
+  savedTheme?: "dark" | "light",
+): Promise<{ roomId: string; agentToken: string }> {
   const room = await createRoom(content);
-  await openExistingRoom(room.roomId, cookie);
+  await openExistingRoom(room.roomId, cookie, savedTheme);
   return room;
 }
 
-async function openExistingRoom(roomId: string, sessionCookie: string): Promise<void> {
+async function openExistingRoom(
+  roomId: string,
+  sessionCookie: string,
+  savedTheme?: "dark" | "light",
+): Promise<void> {
   cookie = sessionCookie;
   win = new Window({ url: `${server.url}/${roomId}` });
+  if (savedTheme) win.localStorage.setItem("theme", savedTheme);
   doc = win.document as unknown as Document;
   doc.body.innerHTML = '<div id="app"></div>';
   setGlobals();
@@ -370,6 +378,40 @@ describe("chat sidebar", () => {
     expect(rows[0]?.textContent).toContain("Nethum");
     expect(rows[0]?.textContent).toContain("you");
     expect(rows[0]?.textContent).toContain("host");
+  });
+
+  test("theme starts dark and the sun toggle saves a light choice", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    const toggle = doc.querySelector(".theme-toggle") as HTMLButtonElement;
+
+    expect(doc.documentElement.dataset.theme).toBe("dark");
+    expect(toggle.getAttribute("aria-label")).toBe("Use light theme");
+    expect(toggle.querySelector("circle")?.getAttribute("r")).toBe("4");
+    expect(toggle.querySelector("svg")?.getAttribute("stroke")).toBe("currentColor");
+
+    click(toggle);
+
+    expect(doc.documentElement.dataset.theme).toBe("light");
+    expect(win.localStorage.getItem("theme")).toBe("light");
+    expect(toggle.getAttribute("aria-label")).toBe("Use dark theme");
+    expect(toggle.querySelector("circle")).toBeNull();
+  });
+
+  test("a saved light choice wins when the room opens", async () => {
+    await openRoom("# Plan\n\nfirst paragraph", "light");
+    const toggle = doc.querySelector(".theme-toggle") as HTMLButtonElement;
+
+    expect(doc.documentElement.dataset.theme).toBe("light");
+    expect(toggle.getAttribute("aria-label")).toBe("Use dark theme");
+    expect(toggle.querySelector("path")?.getAttribute("d")).toContain("M20.985 12.486");
+  });
+
+  test("the page applies the saved theme before its styles", async () => {
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const themeBootstrap = html.indexOf("document.documentElement.dataset.theme");
+
+    expect(themeBootstrap).toBeGreaterThan(-1);
+    expect(themeBootstrap).toBeLessThan(html.indexOf("<style>"));
   });
 
   test("a stamp composer closes when a click lands outside it", async () => {
