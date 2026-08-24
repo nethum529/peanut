@@ -105,7 +105,8 @@ export class RoomError extends Error {
       | "room_ended"
       | "round_pending"
       | "bad_ack"
-      | "reply_too_long",
+      | "reply_too_long"
+      | "reply_meta_too_long",
     message: string,
   ) {
     super(message);
@@ -449,6 +450,12 @@ export class RoomStore {
     const wordCount = trimmed.split(/\s+/).length;
     if (wordCount > 100) {
       throw new RoomError("reply_too_long", `the reply has ${wordCount} words; the cap is 100`);
+    }
+    if (meta && meta.length > 500) {
+      throw new RoomError(
+        "reply_meta_too_long",
+        `the reply meta has ${meta.length} characters; the cap is 500`,
+      );
     }
     const round =
       roundNumber === undefined

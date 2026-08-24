@@ -51,6 +51,9 @@ Keep the reply under 100 words. The reply shows as a chat message
 in the review page. The server refuses a longer reply; if that
 happens, send a shorter one.
 
+Keep optional reply meta at or under 500 characters. The server
+refuses longer meta; if that happens, shorten it and reply again.
+
 A round can carry a verdict line and still ask for a reply. When
 the closing line prompts you to run peanut reply, the review is
 still open, even if a line says Verdict: request_changes and even
