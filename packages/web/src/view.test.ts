@@ -1030,13 +1030,19 @@ describe("chat sidebar", () => {
     await Bun.sleep(2200);
     expect(frame().src).toEndWith("/document?v=1");
     expect(overlayMessages).toContainEqual({ type: "new-version" });
+    await Bun.sleep(2100);
+    expect(
+      overlayMessages.filter(
+        (message) => (message as { type?: string }).type === "new-version",
+      ),
+    ).toHaveLength(1);
     expect(doc.querySelector(".toast-region")?.textContent).toBe("");
 
     postFromOverlay({ type: "reload-document" });
     await Bun.sleep(20);
     expect(frame()).toBe(original);
     expect(frame().src).toEndWith("/document?v=2");
-  }, 6000);
+  }, 8000);
 
   test("does not reload when the content endpoint skips equal content", async () => {
     const room = await openRoom("# Plan\n\nfirst paragraph");

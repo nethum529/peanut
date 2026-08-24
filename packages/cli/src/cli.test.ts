@@ -182,6 +182,11 @@ describe("peanut cli", () => {
     const pushing = run(["push"]);
     expect(await pushing.exited).toBe(0);
     expect(await new Response(pushing.stdout).text()).toContain("Document pushed.");
+
+    const unchanged = run(["push"]);
+    expect(await unchanged.exited).toBe(0);
+    expect(await new Response(unchanged.stdout).text()).toContain("Document unchanged.");
+
     const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
       headers: { cookie },
     }).then((response) => response.json());
@@ -193,6 +198,30 @@ describe("peanut cli", () => {
       headers: { cookie },
     });
     expect(await sharing.exited).toBe(1);
+  }, 15000);
+
+  test("reply warns after a host end, prints the verdict, and cleans up", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--server", server.url]);
+    const sessionPath = join(dir, SESSION);
+    const session = await waitForSession(sessionPath);
+    const cookie = await joinAsHost(session.roomId);
+    await pinAndFlush(session.roomId, cookie, "Finish the work.");
+    expect(await sharing.exited).toBe(0);
+
+    await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    const replying = run(["reply", "Work finished."]);
+    expect(await replying.exited).toBe(1);
+    const output = await new Response(replying.stdout).text();
+    expect(output).toContain("== Review ended ==");
+    expect(output).toContain("Verdict: end (by user)");
+    expect(await new Response(replying.stderr).text()).toContain(
+      "Warning: The content update was refused (409).",
+    );
+    expect(await Bun.file(sessionPath).exists()).toBe(false);
   }, 15000);
 
   test("reply warns for a missing file, sends the reply, and keeps the content", async () => {

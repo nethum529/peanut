@@ -98,12 +98,17 @@ async function api(
   });
 }
 
-async function updateContentFromFile(session: Session): Promise<boolean> {
+type ContentUpdateResult = "updated" | "unchanged" | "skipped";
+
+async function updateContentFromFile(
+  session: Session,
+  refusal: "fail" | "warn" = "fail",
+): Promise<ContentUpdateResult> {
   if (!session.filePath) {
     console.error(
       "Warning: This older session has no file path. The room document was not updated.",
     );
-    return false;
+    return "skipped";
   }
   const file = Bun.file(session.filePath);
   if (!(await file.exists())) {
@@ -111,7 +116,7 @@ async function updateContentFromFile(session: Session): Promise<boolean> {
       `Warning: The shared file no longer exists: ${session.filePath}. ` +
         "The room document was not updated.",
     );
-    return false;
+    return "skipped";
   }
   let content: string;
   try {
@@ -121,7 +126,7 @@ async function updateContentFromFile(session: Session): Promise<boolean> {
       `Warning: The shared file could not be read: ${session.filePath}. ` +
         "The room document was not updated.",
     );
-    return false;
+    return "skipped";
   }
   const response = await api(
     session,
@@ -129,8 +134,16 @@ async function updateContentFromFile(session: Session): Promise<boolean> {
     `/api/rooms/${session.roomId}/agent/content`,
     { content },
   );
-  if (!response.ok) fail(`The content update was refused (${response.status}).`);
-  return true;
+  if (!response.ok) {
+    if (refusal === "fail") fail(`The content update was refused (${response.status}).`);
+    console.error(
+      `Warning: The content update was refused (${response.status}). ` +
+        "The reply will still be sent.",
+    );
+    return "skipped";
+  }
+  const result = (await response.json()) as { updated: boolean };
+  return result.updated ? "updated" : "unchanged";
 }
 
 async function serverAlive(url: string): Promise<boolean> {
@@ -331,7 +344,7 @@ async function reply(flags: Flags): Promise<never> {
   const message = flags.positional.join(" ").trim();
   if (!message) fail('Usage: peanut reply "<what you did>" [--meta m]');
   const session = await loadSession(flags);
-  await updateContentFromFile(session);
+  await updateContentFromFile(session, "warn");
   const meta = flags.named.get("meta");
   const response = await api(session, "POST", `/api/rooms/${session.roomId}/agent/reply`, {
     message,
@@ -354,7 +367,9 @@ async function reply(flags: Flags): Promise<never> {
 
 async function push(flags: Flags): Promise<void> {
   const session = await loadSession(flags);
-  if (await updateContentFromFile(session)) console.log("Document pushed.");
+  const result = await updateContentFromFile(session);
+  if (result === "updated") console.log("Document pushed.");
+  if (result === "unchanged") console.log("Document unchanged.");
 }
 
 // Resumes blocking on an open review without sending anything. This

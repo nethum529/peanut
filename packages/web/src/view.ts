@@ -1039,8 +1039,10 @@ async function refresh(roomId: string): Promise<void> {
   if (loadedContentVersion !== null && state.contentVersion > loadedContentVersion) {
     currentState = state;
     if (overlayHasDraft) {
-      pendingContentVersion = state.contentVersion;
-      postToOverlay({ type: "new-version" });
+      if (pendingContentVersion !== state.contentVersion) {
+        pendingContentVersion = state.contentVersion;
+        postToOverlay({ type: "new-version" });
+      }
     } else {
       reloadDocument(roomId, state.contentVersion, true);
     }

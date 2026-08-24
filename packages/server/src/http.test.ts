@@ -190,6 +190,31 @@ describe("agent content", () => {
     expect(ended.status).toBe(409);
     expect((await ended.json()).error).toBe("room_ended");
   });
+
+  test("requires string content and allows an empty document", async () => {
+    const { body, cookie } = await createRoom();
+    const path = `${server.url}/api/rooms/${body.roomId}/agent/content`;
+    for (const payload of [{}, { content: 42 }, { content: null }]) {
+      const invalid = await fetch(path, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${body.agentToken}` },
+        body: JSON.stringify(payload),
+      });
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error).toBe("bad_instruction");
+    }
+
+    const empty = await fetch(path, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${body.agentToken}` },
+      body: JSON.stringify({ content: "" }),
+    });
+    expect(await empty.json()).toEqual({ updated: true, contentVersion: 2 });
+    const state = await fetch(`${server.url}/api/rooms/${body.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toBe("");
+  });
 });
 
 describe("guest join", () => {
