@@ -502,13 +502,15 @@ describe("chat sidebar", () => {
       )?.[1] ?? "";
     expect(peopleRule).toContain("--people-menu-open-delay: 500ms");
     expect(menuRule).toContain("padding-top: 8px");
-    expect(menuRule).toContain(
-      "transition: opacity 160ms ease 300ms, visibility 0s linear 460ms",
-    );
+    expect(menuRule).toContain("transition: visibility 0s linear 300ms");
+    expect(menuRule).not.toContain("transition: opacity");
     expect(delayedOpenRule).toContain(
-      "transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear",
+      "transition: visibility 0s linear var(--people-menu-open-delay)",
     );
-    expect(immediateOpenRule).toContain("transition: opacity 160ms ease");
+    expect(immediateOpenRule).toContain("transition: visibility 0s linear 0s");
+    expect(html).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\.people:hover \.people-menu,[\s\S]*?transition: opacity 160ms ease var\(--people-menu-open-delay\), visibility 0s linear;/,
+    );
     expect(tooltipWindowRule).toContain(
       "animation: hide-people-tooltip 1ms linear var(--people-menu-open-delay) forwards",
     );
@@ -688,6 +690,12 @@ describe("chat sidebar", () => {
     expect(endRule).toContain("inset-inline-start: auto");
     expect(endRule).toContain("transform: translateY(2px)");
     expect(html).not.toContain(".icon-tooltip-end::before");
+    expect(html).toContain(
+      ".icon-tooltip-end:dir(rtl)::after { transform-origin: bottom left; }",
+    );
+    expect(html).toContain(
+      ".icon-tooltip-below.icon-tooltip-end:dir(rtl)::after { transform-origin: top left; }",
+    );
 
     click(toggle);
 
@@ -698,6 +706,16 @@ describe("chat sidebar", () => {
     expect(toggle.querySelector(".theme-icon-moon path")?.getAttribute("d")).toContain(
       "M20.985 12.486",
     );
+    const transitionGuard = doc.head.querySelector(
+      "style[data-theme-transition-guard]",
+    ) as HTMLStyleElement;
+    expect(transitionGuard.textContent).toBe(
+      "*,*::before,*::after{transition:none !important}",
+    );
+    await new Promise<void>((resolve) => {
+      win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve()));
+    });
+    expect(doc.head.querySelector("style[data-theme-transition-guard]")).toBeNull();
   });
 
   test("a saved light choice wins when the room opens", async () => {
@@ -735,7 +753,17 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".stamp-toggle")).toBeNull();
     const para = doc.querySelector("#plan p")!;
     click(para);
-    expect(doc.querySelector(".composer")).not.toBeNull();
+    const composer = doc.querySelector(".composer");
+    expect(composer).not.toBeNull();
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const viewSource = await Bun.file(new URL("./view.ts", import.meta.url)).text();
+    const popoverRule = html.match(/\.composer, \.card \{([^}]*)\}/)?.[1] ?? "";
+    const inputRule = html.match(/\.composer input \{([^}]*)\}/)?.[1] ?? "";
+    expect(popoverRule).toContain("border-radius: 14px");
+    expect(inputRule).toContain("font-size: 14px");
+    expect(viewSource).toContain('const viewportTop = window.scrollY + toolbarHeight + 8;');
+
     click(doc.querySelector(".sidebar")!);
     expect(doc.querySelector(".composer")).toBeNull();
   });

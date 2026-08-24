@@ -196,17 +196,20 @@
         padding-top: 8px;
         opacity: 0;
         visibility: hidden;
+        transition: visibility 0s linear 300ms;
         z-index: 20;
       }
       .people:hover .people-menu,
       .people:focus-within .people-menu {
         opacity: 1;
         visibility: visible;
+        transition: visibility 0s linear var(--people-menu-open-delay);
       }
       .people .people-menu:hover,
       .people .people-menu:focus-within {
         opacity: 1;
         visibility: visible;
+        transition: visibility 0s linear 0s;
       }
       .people-panel {
         background: var(--surface);
@@ -412,6 +415,8 @@
         transform: translateY(-2px) scale(0.95);
         transform-origin: top right;
       }
+      .icon-tooltip-end:dir(rtl)::after { transform-origin: bottom left; }
+      .icon-tooltip-below.icon-tooltip-end:dir(rtl)::after { transform-origin: top left; }
       .bubble-action:last-child::after {
         inset-inline-end: 0;
         inset-inline-start: auto;
@@ -699,7 +704,7 @@
         padding: 8px;
         background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 12px;
+        border-radius: 14px;
         box-shadow: 0 8px 24px var(--shadow);
         z-index: 10;
       }
@@ -712,6 +717,7 @@
         border-radius: 6px;
         background: var(--surface);
         color: var(--ink);
+        font-size: 14px;
       }
       .composer button, .remove {
         padding: 6px 10px;

@@ -137,10 +137,20 @@ function renderThemeToggle(): HTMLButtonElement {
     `<span class="theme-icon theme-icon-moon">${MOON_ICON}</span>`;
   updateThemeToggle(button);
   button.onclick = () => {
+    const transitionGuard = document.createElement("style");
+    transitionGuard.dataset.themeTransitionGuard = "";
+    transitionGuard.textContent = "*,*::before,*::after{transition:none !important}";
+    document.head.append(transitionGuard);
+
     const theme = currentTheme() === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("theme", theme);
     updateThemeToggle(button);
+
+    void document.body.offsetHeight;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => transitionGuard.remove());
+    });
   };
   return button;
 }
@@ -1015,9 +1025,10 @@ function positionNear(box: HTMLElement, target: HTMLElement): void {
 
   const below = rect.bottom + window.scrollY + 8;
   const above = rect.top + window.scrollY - boxRect.height - 8;
+  const toolbarHeight = document.querySelector<HTMLElement>(".toolbar")?.offsetHeight ?? 0;
+  const viewportTop = window.scrollY + toolbarHeight + 8;
   const viewportBottom = window.scrollY + window.innerHeight - 8;
-  const shouldPlaceAbove =
-    below + boxRect.height > viewportBottom && above >= window.scrollY + 8;
+  const shouldPlaceAbove = below + boxRect.height > viewportBottom && above >= viewportTop;
   box.style.top = `${shouldPlaceAbove ? above : below}px`;
 }
 
