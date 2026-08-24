@@ -276,7 +276,12 @@ describe("chat sidebar", () => {
 
     expect(insetRule).toContain("padding-inline: 2px");
     expect(controlsRule).toContain("gap: 8px");
+    expect(controlsRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(controlsRule).toContain("width: 100%");
+    expect(controlsRule).toContain("min-width: 0");
     expect(composerRule).toContain("align-items: stretch");
+    expect(composerRule).toContain("width: 100%");
+    expect(composerRule).toContain("min-width: 0");
     expect(composerControlsRule).toContain("height: 40px");
     expect(composerControlsRule).toContain("min-height: 40px");
     expect(composerControlsRule).toContain("border-radius: 10px");
