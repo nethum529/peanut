@@ -128,7 +128,7 @@ function renderThemeToggle(): HTMLButtonElement {
   const button = iconButton(
     "Use light theme",
     SUN_ICON,
-    "theme-toggle icon-tooltip-below",
+    "theme-toggle icon-tooltip-below icon-tooltip-end",
   );
   updateThemeToggle(button);
   button.onclick = () => {
