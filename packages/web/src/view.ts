@@ -790,27 +790,12 @@ function renderSidebar(
     side.append(renderSendControls(state, plan));
   }
 
-  if (!ended && state.you.isHost) {
-    // Ending is irreversible, so the first click only arms the button.
-    const end = el("button", "end-button", "End session");
-    let armed = false;
-    end.onclick = async () => {
-      if (!armed) {
-        armed = true;
-        end.textContent = "Really end?";
-        return;
-      }
-      await postJson(`/api/rooms/${state.id}/end`, {});
-      refresh(state.id);
-    };
-    side.append(end);
-  }
-
   return side;
 }
 
 function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElement {
   const box = el("section", "send");
+  const buttons = el("div", "sidebar-button-stack");
   box.append(el("h2", undefined, "Send to agent"));
   const send = el("button", "send-button", "Send to agent");
   const note = el("p", "note");
@@ -833,7 +818,23 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
       note.textContent = body.message ?? "Could not send.";
     }
   };
-  box.append(send, note);
+  buttons.append(send);
+  if (state.you.isHost) {
+    // Ending is irreversible, so the first click only arms the button.
+    const end = el("button", "end-button", "End session");
+    let armed = false;
+    end.onclick = async () => {
+      if (!armed) {
+        armed = true;
+        end.textContent = "Really end?";
+        return;
+      }
+      await postJson(`/api/rooms/${state.id}/end`, {});
+      refresh(state.id);
+    };
+    buttons.append(end);
+  }
+  box.append(buttons, note);
   return box;
 }
 
