@@ -408,7 +408,7 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".card .remove")).not.toBeNull();
   });
 
-  test("an agent reply renders without its meta line", async () => {
+  test("an agent reply renders with its meta line", async () => {
     const { roomId, agentToken } = await openRoom("# Plan\n\nfirst paragraph");
     const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
     input.value = "Do the thing.";
@@ -425,8 +425,8 @@ describe("chat sidebar", () => {
     await Bun.sleep(2300);
     const agent = doc.querySelector(".bubble.agent:not(.working)");
     expect(agent?.textContent).toContain("Done.");
-    expect(agent?.textContent).not.toContain("tests green");
-    expect(agent?.querySelector(".hint")).toBeNull();
+    expect(agent?.textContent).toContain("tests green");
+    expect(agent?.querySelector(".hint")?.textContent).toBe("tests green");
     expect(doc.querySelector(".bubble.working")).toBeNull();
   }, 10_000);
 

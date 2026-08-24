@@ -587,6 +587,7 @@ function renderConversation(state: RoomStateView): HTMLElement {
     if (round.reply) {
       const bubble = el("div", "bubble agent");
       bubble.append(el("span", "words", round.reply.message));
+      if (round.reply.meta) bubble.append(el("span", "hint", round.reply.meta));
       log.append(bubble);
     } else if (!ended && round === latest) {
       // Only the newest round can still be in flight; an older round
