@@ -157,6 +157,7 @@ describe("chat sidebar", () => {
     const edit = doc.querySelector('.bubble-action[aria-label="Edit"]');
     const remove = doc.querySelector('.bubble-action[aria-label="Delete"]');
     const footer = edit?.closest(".bubble-footer");
+    expect(edit?.closest(".bubble")?.getAttribute("tabindex")).toBe("0");
     expect(footer?.querySelector(".hint")).not.toBeNull();
     expect(footer?.querySelector(".bubble-actions")).not.toBeNull();
     expect(edit?.getAttribute("title")).toBeNull();
@@ -173,6 +174,8 @@ describe("chat sidebar", () => {
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     expect(html).toContain(".icon-tooltip::before, .icon-tooltip::after");
     expect(html).not.toContain(".bubble-action::before");
+    expect(html).toContain("@media (hover: none)");
+    expect(html).not.toContain("min-height: 24px");
   });
 
   test("Enter saves an inline edit and updates the queued bubble", async () => {

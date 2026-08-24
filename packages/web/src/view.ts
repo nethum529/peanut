@@ -383,6 +383,7 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
     );
     bubble.classList.add("queued");
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
+      bubble.tabIndex = 0;
       const footer = el("div", "bubble-footer");
       const hint = bubble.querySelector(".hint");
       if (hint) footer.append(hint);

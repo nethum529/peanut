@@ -236,22 +236,31 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        min-height: 24px;
       }
       .bubble-footer .hint { flex: 1; min-width: 0; }
       .bubble-actions {
         display: flex;
+        height: 0;
         gap: 4px;
         margin-left: auto;
         opacity: 0;
         pointer-events: none;
       }
       .bubble:focus-within .bubble-actions {
+        height: 24px;
         opacity: 1;
         pointer-events: auto;
       }
       @media (hover: hover) {
         .bubble:hover .bubble-actions {
+          height: 24px;
+          opacity: 1;
+          pointer-events: auto;
+        }
+      }
+      @media (hover: none) {
+        .bubble-actions {
+          height: 24px;
           opacity: 1;
           pointer-events: auto;
         }
