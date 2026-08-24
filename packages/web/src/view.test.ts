@@ -156,6 +156,16 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".bubble.working")).toBeNull();
   }, 10_000);
 
+  test("participants sit behind the users icon in a dropdown panel", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    expect(doc.querySelector(".people-icon svg")).not.toBeNull();
+    const rows = [...doc.querySelectorAll(".person-row")];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("Nethum");
+    expect(rows[0]?.textContent).toContain("you");
+    expect(rows[0]?.textContent).toContain("host");
+  });
+
   test("a stamp composer closes when a click lands outside it", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const para = doc.querySelector("#plan p")!;
