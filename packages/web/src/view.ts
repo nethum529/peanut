@@ -214,6 +214,7 @@ async function postJson(path: string, payload: unknown): Promise<Response> {
   return fetch(path, { method: "POST", body: JSON.stringify(payload) });
 }
 
+// The Lucide pencil and trash-2 icons, verbatim (lucide.dev, ISC license).
 const PENCIL_ICON = `<svg
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -326,40 +327,68 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
     );
     bubble.classList.add("queued");
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
+      bubble.classList.add("actionable");
       const actions = el("div", "bubble-actions");
       const edit = iconButton("Edit", PENCIL_ICON);
       const remove = iconButton("Delete", TRASH_ICON);
       edit.onclick = () => {
         const shownWords = bubble.querySelector(".words");
         if (!shownWords) return;
-        const input = el("input", "inline-edit");
+        const editor = el("div", "inline-editor");
+        const input = el("textarea", "inline-edit");
+        const error = el("span", "inline-edit-error");
+        error.id = `inline-edit-error-${instruction.id}`;
+        error.setAttribute("role", "status");
         input.value = instruction.words;
         input.maxLength = 2000;
         input.setAttribute("aria-label", "Edit queued message");
-        shownWords.replaceWith(input);
+        input.setAttribute("aria-describedby", error.id);
+        editor.append(input, error);
+        shownWords.replaceWith(editor);
         bubble.classList.add("editing");
         input.focus();
         input.select();
 
+        input.oninput = () => {
+          input.removeAttribute("aria-invalid");
+          error.textContent = "";
+        };
+
         input.onkeydown = async (key) => {
           if (key.key === "Escape") {
             key.preventDefault();
-            input.replaceWith(shownWords);
+            editor.replaceWith(shownWords);
             bubble.classList.remove("editing");
             edit.focus();
             return;
           }
-          if (key.key !== "Enter") return;
+          if (key.key !== "Enter" || key.shiftKey) return;
           key.preventDefault();
           const words = input.value.trim();
-          if (!words) return;
-          const response = await fetch(
-            `/api/rooms/${state.id}/instructions/${instruction.id}`,
-            { method: "PATCH", body: JSON.stringify({ words }) },
-          );
-          if (!response.ok) return;
+          if (!words) {
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = "Message cannot be empty.";
+            return;
+          }
+          let response: Response;
+          try {
+            response = await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ words }),
+            });
+          } catch {
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = "Could not save changes.";
+            return;
+          }
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = body.message ?? "Could not save changes.";
+            return;
+          }
           shownWords.textContent = words;
-          input.replaceWith(shownWords);
+          editor.replaceWith(shownWords);
           bubble.classList.remove("editing");
           refresh(state.id);
         };
@@ -592,7 +621,10 @@ function instructionRow(state: RoomStateView, instruction: InstructionView): HTM
   const author = el("span", "author", instruction.author.name);
   author.style.color = instruction.author.color;
   row.append(author, el("span", "words", instruction.words));
-  if ((instruction.mine || state.you.isHost) && state.status !== "ended") {
+  if (
+    (instruction.mine || state.you.isHost || state.you.canSend) &&
+    state.status !== "ended"
+  ) {
     const remove = el("button", "remove", "Remove");
     remove.onclick = async () => {
       await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
@@ -738,7 +770,7 @@ async function refresh(roomId: string): Promise<void> {
   const state = (await response.json()) as RoomStateView;
   const serialized = JSON.stringify(state);
   if (serialized === lastRendered) return;
-  // Never re-render over an open composer or inline edit; the input
+  // Never re-render over an open composer or inline edit; the textarea
   // in progress wins.
   if (document.querySelector(".composer, .inline-edit")) return;
   lastRendered = serialized;

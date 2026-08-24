@@ -75,10 +75,15 @@ function click(target: Element): void {
   target.dispatchEvent(new win.MouseEvent("click", { bubbles: true }) as unknown as Event);
 }
 
-function pressEnter(target: Element): void {
-  target.dispatchEvent(
-    new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event,
-  );
+function pressEnter(target: Element, shiftKey = false): boolean {
+  const event = new win.KeyboardEvent("keydown", {
+    key: "Enter",
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  }) as unknown as Event;
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
 }
 
 function pressEscape(target: Element): void {
@@ -159,7 +164,7 @@ describe("chat sidebar", () => {
     await Bun.sleep(150);
 
     click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
-    const input = doc.querySelector(".inline-edit") as HTMLInputElement;
+    const input = doc.querySelector(".inline-edit") as HTMLTextAreaElement;
     expect(input.value).toBe("Old words.");
     input.value = "New words.";
     pressEnter(input);
@@ -174,6 +179,35 @@ describe("chat sidebar", () => {
     expect(state.instructions[0].words).toBe("New words.");
   });
 
+  test("a multiline edit keeps line breaks and Shift+Enter does not save", async () => {
+    const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
+    const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    composer.value = "First line.\nSecond line.";
+    pressEnter(composer);
+    await Bun.sleep(150);
+
+    click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
+    const input = doc.querySelector(".inline-edit") as HTMLTextAreaElement;
+    expect(input.tagName).toBe("TEXTAREA");
+    expect(input.value).toBe("First line.\nSecond line.");
+    expect(pressEnter(input, true)).toBe(false);
+    expect(doc.querySelector(".inline-edit")).toBe(input);
+    input.value = "First line.\nUpdated second line.\nThird line.";
+    pressEnter(input);
+    await Bun.sleep(150);
+
+    const response = await realFetch(`${server.url}/api/rooms/${roomId}/state`, {
+      headers: { cookie },
+    });
+    const state = await response.json();
+    expect(state.instructions[0].words).toBe(
+      "First line.\nUpdated second line.\nThird line.",
+    );
+    expect(doc.querySelector(".bubble.queued .words")?.textContent).toBe(
+      "First line.\nUpdated second line.\nThird line.",
+    );
+  });
+
   test("Escape cancels an inline edit and polling does not replace it", async () => {
     const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
     const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
@@ -182,7 +216,7 @@ describe("chat sidebar", () => {
     await Bun.sleep(150);
 
     click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
-    const input = doc.querySelector(".inline-edit") as HTMLInputElement;
+    const input = doc.querySelector(".inline-edit") as HTMLTextAreaElement;
     input.value = "Unsaved words.";
     const stateResponse = await realFetch(`${server.url}/api/rooms/${roomId}/state`, {
       headers: { cookie },
@@ -201,6 +235,28 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".inline-edit")).toBeNull();
     expect(doc.querySelector(".bubble.queued .words")?.textContent).toBe("Keep these words.");
   }, 10_000);
+
+  test("a failed inline save shows an error and keeps the textarea open", async () => {
+    const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
+    const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    composer.value = "Edit after end.";
+    pressEnter(composer);
+    await Bun.sleep(150);
+
+    click(doc.querySelector('.bubble-action[aria-label="Edit"]')!);
+    const input = doc.querySelector(".inline-edit") as HTMLTextAreaElement;
+    await realFetch(`${server.url}/api/rooms/${roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    input.value = "This save must fail.";
+    pressEnter(input);
+    await Bun.sleep(100);
+
+    expect(doc.querySelector(".inline-edit")).toBe(input);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(doc.querySelector(".inline-edit-error")?.textContent).not.toBe("");
+  });
 
   test("the delete button removes a queued message and the bubble goes away", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
@@ -250,6 +306,39 @@ describe("chat sidebar", () => {
     resetView();
     await openExistingRoom(roomId, hostCookie);
     expect(doc.querySelectorAll(".bubble-action")).toHaveLength(4);
+  });
+
+  test("a granted guest can remove an instruction from a stamped card", async () => {
+    const { roomId } = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({
+        words: "Host stamp.",
+        anchor: {
+          type: "stamp",
+          selector: "p:nth-of-type(1)",
+          guard: "first paragraph",
+        },
+      }),
+    });
+    const joined = await realFetch(`${server.url}/api/rooms/${roomId}/join`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Sam" }),
+    });
+    const guestCookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const guestState = await joined.json();
+    await realFetch(`${server.url}/api/rooms/${roomId}/grants`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ participantId: guestState.you.id, canSend: true }),
+    });
+
+    await openExistingRoom(roomId, guestCookie);
+    click(doc.querySelector(".stamp-toggle")!);
+    click(doc.querySelector("#plan p")!);
+    expect(doc.querySelector(".card .remove")).not.toBeNull();
   });
 
   test("an agent reply renders as an agent bubble with its meta line", async () => {
