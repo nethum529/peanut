@@ -446,9 +446,8 @@ describe("chat sidebar", () => {
     expect(icon?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     const rows = [...doc.querySelectorAll(".person-row")];
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.textContent).toContain("Nethum");
-    expect(rows[0]?.textContent).toContain("you");
-    expect(rows[0]?.textContent).toContain("host");
+    expect(rows[0]?.querySelector(".person-name")?.textContent).toBe("Nethum");
+    expect(rows[0]?.querySelector(".person-tag")).toBeNull();
   });
 
   test("theme starts dark and the sun toggle saves a light choice", async () => {

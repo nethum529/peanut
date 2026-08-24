@@ -446,8 +446,6 @@ function render(state: RoomStateView): void {
     const dot = el("span", "person-dot");
     setAuthorColor(dot, participant.color, "author-dot");
     row.append(dot, el("span", "person-name", participant.name));
-    if (participant.you) row.append(el("span", "person-tag", "you"));
-    if (participant.isHost) row.append(el("span", "person-tag", "host"));
     panel.append(row);
   }
   menu.append(panel);
