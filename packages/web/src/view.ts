@@ -163,6 +163,7 @@ let toastRegion: HTMLElement | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let toastRemoveTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSnapshots = new Map<string, (html: string) => void>();
+let connectionLost = false;
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -217,6 +218,53 @@ function showMessage(title: string, detail: string): void {
   const box = el("div", "notice");
   box.append(el("h1", undefined, title), el("p", undefined, detail));
   root.append(box);
+}
+
+function ensureRoomBanner(): HTMLElement {
+  const root = document.getElementById("app")!;
+  const existing = root.querySelector<HTMLElement>(".room-banner");
+  if (existing) return existing;
+  const banner = el("div", "room-banner");
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.setAttribute("aria-atomic", "true");
+  root.append(banner);
+  return banner;
+}
+
+function syncRoomBanner(): void {
+  const root = document.getElementById("app");
+  if (!root) return;
+  const kind = currentState?.status === "ended" ? "ended" : connectionLost ? "offline" : null;
+  const banner = ensureRoomBanner();
+  if (!kind) {
+    banner.className = "room-banner";
+    banner.textContent = "";
+    return;
+  }
+
+  banner.className = `room-banner ${kind}`;
+  banner.textContent =
+    kind === "ended" ? "This review has ended" : "Connection lost. Trying again...";
+  const toolbar = root.querySelector(".toolbar");
+  if (toolbar && banner.previousElementSibling !== toolbar) toolbar.after(banner);
+}
+
+function setConnectionLost(lost: boolean): void {
+  connectionLost = lost;
+  syncRoomBanner();
+}
+
+function markRoomEnded(): void {
+  connectionLost = false;
+  if (!currentState) {
+    syncRoomBanner();
+    return;
+  }
+  const endedState = { ...currentState, status: "ended" };
+  lastRendered = JSON.stringify(endedState);
+  render(endedState);
+  disconnectRelay();
 }
 
 function showJoinDialog(roomId: string): void {
@@ -458,18 +506,19 @@ async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<voi
     return;
   }
   if (message.type === "pin") {
-    await postJson(`/api/rooms/${currentState.id}/instructions`, {
+    const response = await postJson(`/api/rooms/${currentState.id}/instructions`, {
       words: message.words,
       anchor: message.anchor,
     });
-    await refresh(currentState.id);
+    if (response?.ok) await refresh(currentState.id);
     return;
   }
   if (message.type === "unpin") {
-    await fetch(`/api/rooms/${currentState.id}/instructions/${message.instructionId}`, {
-      method: "DELETE",
-    });
-    await refresh(currentState.id);
+    const response = await actionRequest(
+      `/api/rooms/${currentState.id}/instructions/${message.instructionId}`,
+      { method: "DELETE" },
+    );
+    if (response?.ok) await refresh(currentState.id);
     return;
   }
   if (message.type === "cursor") {
@@ -546,7 +595,7 @@ function render(state: RoomStateView): void {
     const dot = el("span", "person-dot");
     setAuthorColor(dot, participant.color, "author-dot");
     row.append(dot, el("span", "person-name", participant.name));
-    if (state.you.isHost && !participant.isHost) {
+    if (state.status !== "ended" && state.you.isHost && !participant.isHost) {
       row.append(renderSendPermissionSwitch(state, participant));
     }
     panel.append(row);
@@ -568,9 +617,10 @@ function render(state: RoomStateView): void {
     const left = el("div", "left");
     left.append(ensurePlanFrame(state.id));
     body.append(left, sidebar);
-    root.replaceChildren(bar, body);
+    root.replaceChildren(bar, ensureRoomBanner(), body);
   }
   postOverlayState();
+  syncRoomBanner();
 }
 
 function verdictLabel(verdict: string): string {
@@ -579,8 +629,31 @@ function verdictLabel(verdict: string): string {
   return "Ended";
 }
 
-async function postJson(path: string, payload: unknown): Promise<Response> {
-  return fetch(path, { method: "POST", body: JSON.stringify(payload) });
+async function responseIsRoomEnded(response: Response): Promise<boolean> {
+  if (response.status !== 409) return false;
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => ({}));
+  return body.error === "room_ended";
+}
+
+async function actionRequest(path: string, init: RequestInit): Promise<Response | null> {
+  try {
+    const response = await fetch(path, init);
+    if (await responseIsRoomEnded(response)) {
+      markRoomEnded();
+      return null;
+    }
+    return response;
+  } catch {
+    setConnectionLost(true);
+    return null;
+  }
+}
+
+async function postJson(path: string, payload: unknown): Promise<Response | null> {
+  return actionRequest(path, { method: "POST", body: JSON.stringify(payload) });
 }
 
 // The Lucide pencil and trash-2 icons, verbatim (lucide.dev, ISC license).
@@ -654,7 +727,7 @@ function renderSendPermissionSwitch(
         participantId: participant.id,
         canSend,
       });
-      if (!response.ok) {
+      if (!response?.ok) {
         setPermissionSwitchChecked(button, previous);
         return;
       }
@@ -774,17 +847,14 @@ function renderConversation(state: RoomStateView): HTMLElement {
             error.textContent = "Message cannot be empty.";
             return;
           }
-          let response: Response;
-          try {
-            response = await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, {
+          const response = await actionRequest(
+            `/api/rooms/${state.id}/instructions/${instruction.id}`,
+            {
               method: "PATCH",
               body: JSON.stringify({ words }),
-            });
-          } catch {
-            input.setAttribute("aria-invalid", "true");
-            error.textContent = "Could not save changes.";
-            return;
-          }
+            },
+          );
+          if (!response) return;
           if (!response.ok) {
             const body = await response.json().catch(() => ({}));
             input.setAttribute("aria-invalid", "true");
@@ -798,8 +868,11 @@ function renderConversation(state: RoomStateView): HTMLElement {
         };
       };
       remove.onclick = async () => {
-        await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
-        refresh(state.id);
+        const response = await actionRequest(
+          `/api/rooms/${state.id}/instructions/${instruction.id}`,
+          { method: "DELETE" },
+        );
+        if (response?.ok) refresh(state.id);
       };
       actions.append(edit, remove);
       footer.append(actions);
@@ -849,7 +922,7 @@ function renderSidebar(
         words,
         anchor: { type: "chat" },
       });
-      if (response.ok) {
+      if (response?.ok) {
         input.value = "";
         refresh(state.id);
       }
@@ -886,6 +959,7 @@ function renderSendControls(state: RoomStateView): HTMLElement {
       domSnapshot,
       nextStep: "",
     });
+    if (!response) return;
     if (response.ok) {
       refresh(state.id);
       return;
@@ -910,8 +984,8 @@ function renderSendControls(state: RoomStateView): HTMLElement {
         end.textContent = "Really end?";
         return;
       }
-      await postJson(`/api/rooms/${state.id}/end`, {});
-      refresh(state.id);
+      const response = await postJson(`/api/rooms/${state.id}/end`, {});
+      if (response?.ok) refresh(state.id);
     };
     buttons.append(end);
   }
@@ -920,9 +994,19 @@ function renderSendControls(state: RoomStateView): HTMLElement {
 }
 
 async function refresh(roomId: string): Promise<void> {
-  const response = await fetch(`/api/rooms/${roomId}/state`);
-  if (!response.ok) return;
-  const state = (await response.json()) as RoomStateView;
+  let state: RoomStateView;
+  try {
+    const response = await fetch(`/api/rooms/${roomId}/state`);
+    if (!response.ok) {
+      setConnectionLost(true);
+      return;
+    }
+    state = (await response.json()) as RoomStateView;
+  } catch {
+    setConnectionLost(true);
+    return;
+  }
+  setConnectionLost(false);
   const serialized = JSON.stringify(state);
   if (serialized === lastRendered) return;
   // Never re-render over an inline sidebar edit; the textarea in
@@ -953,6 +1037,7 @@ async function refresh(roomId: string): Promise<void> {
 function start(roomId: string, state: RoomStateView): void {
   installChromeProtocol();
   ensureToastRegion();
+  connectionLost = false;
   lastRendered = JSON.stringify(state);
   render(state);
   if (state.status === "ended") disconnectRelay();
@@ -975,6 +1060,7 @@ export function resetView(): void {
   pendingCursor = null;
   lastCursorSentAt = 0;
   currentState = null;
+  connectionLost = false;
   overlayReady = false;
   planFrame = null;
   for (const pending of pendingSnapshots.values()) pending("");
@@ -994,12 +1080,17 @@ export async function boot(): Promise<void> {
     showMessage("No room", "Open a room link to start.");
     return;
   }
-  const response = await fetch(`/api/rooms/${roomId}/state`);
-  if (response.ok) {
-    start(roomId, (await response.json()) as RoomStateView);
-  } else if (response.status === 403) {
-    showJoinDialog(roomId);
-  } else {
-    showMessage("Room not found", "This link does not point to a live room.");
+  ensureRoomBanner();
+  try {
+    const response = await fetch(`/api/rooms/${roomId}/state`);
+    if (response.ok) {
+      start(roomId, (await response.json()) as RoomStateView);
+    } else if (response.status === 403) {
+      showJoinDialog(roomId);
+    } else {
+      showMessage("Room not found", "This link does not point to a live room.");
+    }
+  } catch {
+    setConnectionLost(true);
   }
 }
