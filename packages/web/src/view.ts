@@ -66,6 +66,11 @@ interface CursorMessage {
   y: number;
 }
 
+interface CursorLeaveMessage {
+  type: "cursor-leave";
+  participantId: string;
+}
+
 interface RemoteCursor {
   x: number;
   y: number;
@@ -218,13 +223,14 @@ function cursorElement(participant: ParticipantView, cursor: RemoteCursor): HTML
   const node = el("div", "live-cursor");
   node.dataset.participantId = participant.id;
   node.setAttribute("aria-hidden", "true");
-  node.style.setProperty("--cursor-color", participant.color);
+  setAuthorColor(node, participant.color, "author-cursor");
   node.innerHTML =
     '<svg viewBox="0 0 20 24" aria-hidden="true" focusable="false">' +
     '<path d="M2 1.5v17.8l4.4-4.2 3.6 7.4 3.7-1.8-3.6-7.2h6.1L2 1.5Z"/>' +
     "</svg>";
   node.append(el("span", "cursor-name", participant.name));
   positionCursorElement(node, cursor.x, cursor.y);
+  node.classList.toggle("stale", cursor.removeTimer !== null);
   return node;
 }
 
@@ -264,7 +270,7 @@ function removeRemoteCursor(participantId: string): void {
 
 function fadeRemoteCursor(participantId: string): void {
   const cursor = remoteCursors.get(participantId);
-  if (!cursor) return;
+  if (!cursor || cursor.removeTimer !== null) return;
   cursor.element?.classList.add("stale");
   cursor.removeTimer = setTimeout(() => removeRemoteCursor(participantId), CURSOR_FADE_MS);
 }
@@ -275,16 +281,30 @@ function clearRemoteCursors(): void {
 
 function receiveCursorFrame(data: unknown): void {
   if (typeof data !== "string" || !currentState) return;
-  let message: Partial<CursorMessage>;
+  let decoded: unknown;
   try {
-    message = JSON.parse(data) as Partial<CursorMessage>;
+    decoded = JSON.parse(data);
   } catch {
+    return;
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return;
+  const message = decoded as Partial<CursorMessage | CursorLeaveMessage>;
+  if (
+    typeof message.participantId !== "string" ||
+    message.participantId === currentState.you.id
+  ) {
+    return;
+  }
+  const participant = currentState.participants.find(
+    (person) => person.id === message.participantId,
+  );
+  if (!participant || participant.you) return;
+  if (message.type === "cursor-leave") {
+    fadeRemoteCursor(participant.id);
     return;
   }
   if (
     message.type !== "cursor" ||
-    typeof message.participantId !== "string" ||
-    message.participantId === currentState.you.id ||
     typeof message.x !== "number" ||
     typeof message.y !== "number" ||
     !Number.isFinite(message.x) ||
@@ -296,10 +316,6 @@ function receiveCursorFrame(data: unknown): void {
   ) {
     return;
   }
-  const participant = currentState.participants.find(
-    (person) => person.id === message.participantId,
-  );
-  if (!participant || participant.you) return;
 
   const previous = remoteCursors.get(participant.id);
   if (previous) {
@@ -371,6 +387,19 @@ function flushCursorPosition(): void {
     participantId: currentState.you.id,
     x: position.x,
     y: position.y,
+  };
+  relaySocket.send(JSON.stringify(message));
+  lastCursorSentAt = performance.now();
+}
+
+function sendCursorLeave(): void {
+  if (cursorSendTimer !== null) clearTimeout(cursorSendTimer);
+  cursorSendTimer = null;
+  pendingCursor = null;
+  if (!currentState || !relaySocket || relaySocket.readyState !== 1) return;
+  const message: CursorLeaveMessage = {
+    type: "cursor-leave",
+    participantId: currentState.you.id,
   };
   relaySocket.send(JSON.stringify(message));
   lastCursorSentAt = performance.now();
@@ -465,6 +494,7 @@ function render(state: RoomStateView): void {
   } else {
     wireComposer(plan, state);
     plan.onpointermove = (event) => queueCursorPosition(plan, event);
+    plan.onpointerleave = sendCursorLeave;
   }
 }
 

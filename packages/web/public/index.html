@@ -427,7 +427,7 @@
         height: 0;
         opacity: 1;
         color: var(--cursor-color);
-        filter: drop-shadow(0 1px 1px rgba(43, 46, 58, 0.22));
+        filter: drop-shadow(0 1px 1px var(--shadow));
       }
       .live-cursor.stale { opacity: 0; }
       .live-cursor svg {
@@ -437,7 +437,7 @@
         width: 20px;
         height: 24px;
         fill: currentColor;
-        stroke: #fff;
+        stroke: var(--surface);
         stroke-width: 1.5px;
         stroke-linejoin: round;
       }
@@ -452,7 +452,7 @@
         overflow: hidden;
         border-radius: 999px;
         background: var(--cursor-color);
-        color: #fff;
+        color: var(--on-accent);
         font-size: 12px;
         font-weight: 600;
         line-height: 18px;
@@ -583,6 +583,9 @@
       }
       .author-outline {
         outline-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
+      }
+      .author-cursor {
+        --cursor-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
       }
       .ended {
         text-align: center;

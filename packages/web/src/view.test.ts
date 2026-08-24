@@ -491,7 +491,8 @@ describe("live cursors", () => {
     expect(cursor).not.toBeNull();
     expect(cursor.style.left).toBe("25%");
     expect(cursor.style.top).toBe("75%");
-    expect(cursor.style.getPropertyValue("--cursor-color")).toBe(guest.participant.color);
+    expect(cursor.classList.contains("author-cursor")).toBe(true);
+    expect(cursor.style.getPropertyValue("--author-color")).toBe(guest.participant.color);
     expect(cursor.querySelector(".cursor-name")?.textContent).toBe("Sam");
 
     await Bun.sleep(3200);
@@ -499,12 +500,66 @@ describe("live cursors", () => {
     peer.close();
   }, 5000);
 
+  test("rejects invalid, unknown, and self-asserted cursor frames", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+
+    for (const frame of [
+      { type: "cursor", participantId: guest.participant.id, x: -0.1, y: 0.5 },
+      { type: "cursor", participantId: "unknown", x: 0.5, y: 0.5 },
+      { type: "cursor", participantId: room.participant.id, x: 0.5, y: 0.5 },
+    ]) {
+      peer.send(JSON.stringify(frame));
+    }
+    peer.send("null");
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".live-cursor")).toBeNull();
+    peer.close();
+  });
+
+  test("keeps a live cursor across a room state re-render", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+    peer.send(
+      JSON.stringify({
+        type: "cursor",
+        participantId: guest.participant.id,
+        x: 0.25,
+        y: 0.75,
+      }),
+    );
+    await Bun.sleep(50);
+    const before = doc.querySelector(".live-cursor");
+    expect(before).not.toBeNull();
+
+    await joinRoom(room.roomId, "Alex");
+    await Bun.sleep(2100);
+
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(3);
+    const after = doc.querySelector(".live-cursor");
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(after?.querySelector(".cursor-name")?.textContent).toBe("Sam");
+    peer.close();
+  }, 4000);
+
   test("throttles pointer updates and sends the latest plan-relative position", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
     const guest = await joinRoom(room.roomId, "Sam");
     await openExistingRoom(room.roomId, cookie);
     const peer = await connectRelay(room.roomId, guest.cookie);
-    const messages: Array<{ type: string; participantId: string; x: number; y: number }> = [];
+    const messages: Array<{
+      type: string;
+      participantId: string;
+      x?: number;
+      y?: number;
+    }> = [];
     peer.onmessage = (event) => messages.push(JSON.parse(String(event.data)));
     const plan = doc.getElementById("plan") as HTMLElement;
     plan.getBoundingClientRect = () =>
@@ -530,6 +585,12 @@ describe("live cursors", () => {
       participantId: room.participant.id,
       x: 0.5,
       y: 0.5,
+    });
+    plan.dispatchEvent(new win.MouseEvent("pointerleave") as unknown as Event);
+    await Bun.sleep(50);
+    expect(messages.at(-1)).toEqual({
+      type: "cursor-leave",
+      participantId: room.participant.id,
     });
     peer.close();
   });
