@@ -231,7 +231,7 @@
       }
       .bubble.agent .hint { color: var(--muted); }
       .bubble.working { color: var(--muted); }
-      .bubble.queued { opacity: 0.75; border-style: dashed; }
+      .bubble.queued { border-style: dashed; }
       .bubble.queued.mine { border-style: solid; }
       .bubble-footer {
         display: flex;
@@ -240,30 +240,8 @@
       }
       .bubble-actions {
         display: flex;
-        height: 0;
         gap: 4px;
         margin-left: auto;
-        opacity: 0;
-        pointer-events: none;
-      }
-      .bubble:focus-within .bubble-actions {
-        height: 24px;
-        opacity: 1;
-        pointer-events: auto;
-      }
-      @media (hover: hover) {
-        .bubble:hover .bubble-actions {
-          height: 24px;
-          opacity: 1;
-          pointer-events: auto;
-        }
-      }
-      @media (hover: none) {
-        .bubble-actions {
-          height: 24px;
-          opacity: 1;
-          pointer-events: auto;
-        }
       }
       .bubble.editing .bubble-footer { display: none; }
       .bubble-action {
@@ -271,17 +249,16 @@
         place-items: center;
         width: 24px;
         height: 24px;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--surface);
+        border: 0;
+        background: transparent;
         color: var(--muted);
         cursor: pointer;
         padding: 0;
         touch-action: manipulation;
       }
-      .bubble-action:hover { color: var(--ink); }
+      .bubble-action:hover, .bubble-action:focus-visible { color: var(--accent); }
       .bubble-action:focus-visible { outline-offset: 2px; }
-      .bubble-action svg { width: 14px; height: 14px; }
+      .bubble-action svg { width: 16px; height: 16px; }
       .icon-tooltip { position: relative; }
       .icon-tooltip::before, .icon-tooltip::after {
         position: absolute;
@@ -347,11 +324,6 @@
         transform: translateY(0) scale(1);
       }
       @media (prefers-reduced-motion: no-preference) {
-        .bubble-actions {
-          transition-property: opacity;
-          transition-duration: 120ms;
-          transition-timing-function: ease-out;
-        }
         .icon-tooltip::before, .icon-tooltip::after {
           transition-property: opacity, transform, visibility;
           transition-duration: 100ms, 100ms, 0ms;
