@@ -155,8 +155,7 @@ function render(state: RoomStateView): void {
   const brand = el("span", "wordmark", "Peanut");
   const title = el("span", "title", state.title || "Untitled review");
   const people = el("div", "people");
-  const icon = el("span", "people-icon");
-  icon.innerHTML = USERS_ICON;
+  const icon = iconButton("Participants", USERS_ICON, "people-icon");
   const menu = el("div", "people-menu");
   const panel = el("div", "people-panel");
   for (const participant of state.participants) {
@@ -248,8 +247,8 @@ const TRASH_ICON = `<svg
   <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 </svg>`;
 
-function iconButton(label: string, icon: string): HTMLButtonElement {
-  const button = el("button", "bubble-action");
+function iconButton(label: string, icon: string, className: string): HTMLButtonElement {
+  const button = el("button", `${className} icon-tooltip`);
   button.type = "button";
   button.setAttribute("aria-label", label);
   button.innerHTML = icon;
@@ -329,8 +328,8 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
       bubble.classList.add("actionable");
       const actions = el("div", "bubble-actions");
-      const edit = iconButton("Edit", PENCIL_ICON);
-      const remove = iconButton("Delete", TRASH_ICON);
+      const edit = iconButton("Edit", PENCIL_ICON, "bubble-action");
+      const remove = iconButton("Delete", TRASH_ICON, "bubble-action");
       edit.onclick = () => {
         const shownWords = bubble.querySelector(".words");
         if (!shownWords) return;
