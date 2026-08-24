@@ -144,6 +144,16 @@ function pressEscape(target: Element): void {
   );
 }
 
+function pressSpace(target: Element): boolean {
+  const event = new win.KeyboardEvent("keydown", {
+    key: " ",
+    bubbles: true,
+    cancelable: true,
+  }) as unknown as Event;
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 beforeEach(() => {
   server = startServer();
 });
@@ -468,6 +478,177 @@ describe("chat sidebar", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.querySelector(".person-name")?.textContent).toBe("Nethum");
     expect(rows[0]?.querySelector(".person-tag")).toBeNull();
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const peopleRule = html.match(/\.people \{([^}]*)\}/)?.[1] ?? "";
+    const menuRule = html.match(/\.people-menu \{([^}]*)\}/)?.[1] ?? "";
+    const delayedOpenRule =
+      html.match(
+        /\.people:hover \.people-menu,\s*\.people:focus-within \.people-menu \{([^}]*)\}/,
+      )?.[1] ?? "";
+    const immediateOpenRule =
+      html.match(
+        /\.people \.people-menu:hover,\s*\.people \.people-menu:focus-within \{([^}]*)\}/,
+      )?.[1] ?? "";
+    const tooltipWindowRule =
+      html.match(
+        /\.people:hover \.people-icon::before,\s*\.people:hover \.people-icon::after,\s*\.people:focus-within \.people-icon::before,\s*\.people:focus-within \.people-icon::after \{([^}]*)\}/,
+      )?.[1] ?? "";
+    const menuTooltipRule =
+      html.match(
+        /\.people:has\(\.people-menu:hover\) \.people-icon::before,\s*\.people:has\(\.people-menu:hover\) \.people-icon::after,\s*\.people:has\(\.people-menu:focus-within\) \.people-icon::before,\s*\.people:has\(\.people-menu:focus-within\) \.people-icon::after \{([^}]*)\}/,
+      )?.[1] ?? "";
+    expect(peopleRule).toContain("--people-menu-open-delay: 500ms");
+    expect(menuRule).toContain("padding-top: 8px");
+    expect(menuRule).toContain(
+      "transition: opacity 160ms ease 300ms, visibility 0s linear 460ms",
+    );
+    expect(delayedOpenRule).toContain(
+      "transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear",
+    );
+    expect(immediateOpenRule).toContain("transition: opacity 160ms ease");
+    expect(tooltipWindowRule).toContain(
+      "animation: hide-people-tooltip 1ms linear var(--people-menu-open-delay) forwards",
+    );
+    expect(tooltipWindowRule).not.toContain("visibility: hidden");
+    expect(menuTooltipRule).toContain("opacity: 0");
+    expect(menuTooltipRule).toContain("visibility: hidden");
+  });
+
+  test("a host grants and revokes guest send permission from the people menu", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+
+    const rows = [...doc.querySelectorAll(".person-row")];
+    const hostRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Nethum");
+    const guestRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Sam");
+    expect(hostRow?.querySelector(".permission-switch")).toBeNull();
+    let permission = guestRow?.querySelector(".permission-switch") as HTMLButtonElement;
+    expect(permission?.getAttribute("role")).toBe("switch");
+    expect(permission?.getAttribute("aria-label")).toBe("Allow Sam to send");
+    expect(permission?.getAttribute("aria-checked")).toBe("false");
+    expect(permission?.classList.contains("is-checked")).toBe(false);
+    expect(permission?.dataset.participantId).toBe(guest.participant.id);
+    expect(permission?.querySelector(".permission-switch-thumb")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+
+    click(permission);
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+    expect(permission.classList.contains("is-checked")).toBe(true);
+    expect(permission.getAttribute("aria-busy")).toBe("true");
+    expect(doc.activeElement).toBe(permission);
+    await Bun.sleep(150);
+
+    let response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    let state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(true);
+    expect(doc.querySelector('.permission-switch[aria-label="Allow Sam to send"]')).toBe(
+      permission,
+    );
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+    expect(permission.classList.contains("is-checked")).toBe(true);
+    expect(permission.getAttribute("aria-busy")).toBeNull();
+    expect(doc.activeElement).toBe(permission);
+
+    expect(pressSpace(permission)).toBe(true);
+    expect(permission.getAttribute("aria-checked")).toBe("false");
+    expect(permission.classList.contains("is-checked")).toBe(false);
+    expect(permission.getAttribute("aria-busy")).toBe("true");
+    await Bun.sleep(150);
+    response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(false);
+    expect(doc.querySelector('.permission-switch[aria-label="Allow Sam to send"]')).toBe(
+      permission,
+    );
+    expect(permission.getAttribute("aria-busy")).toBeNull();
+    expect(doc.activeElement).toBe(permission);
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const checkedRule = html.match(/\.permission-switch\.is-checked \{([^}]*)\}/)?.[1] ?? "";
+    const busyRule =
+      html.match(/\.permission-switch\[aria-busy="true"\] \{([^}]*)\}/)?.[1] ?? "";
+    const thumbRule = html.match(/\.permission-switch-thumb \{([^}]*)\}/)?.[1] ?? "";
+    expect(checkedRule).toContain("background: var(--accent-text)");
+    expect(busyRule).toContain("opacity: 0.55");
+    expect(busyRule).toContain("cursor: wait");
+    expect(thumbRule).not.toContain("transition");
+    expect(html).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\.permission-switch-thumb \{\s*transition: transform 150ms cubic-bezier\(0\.77, 0, 0\.175, 1\);/,
+    );
+  });
+
+  test("a failed send permission change restores the switch", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+    const permission = doc.querySelector(".permission-switch") as HTMLButtonElement;
+
+    cookie = guest.cookie;
+    click(permission);
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+    expect(permission.classList.contains("is-checked")).toBe(true);
+    expect(permission.getAttribute("aria-busy")).toBe("true");
+    await Bun.sleep(150);
+
+    expect(permission.getAttribute("aria-checked")).toBe("false");
+    expect(permission.classList.contains("is-checked")).toBe(false);
+    expect(permission.getAttribute("aria-busy")).toBeNull();
+    expect(doc.activeElement).toBe(permission);
+    const response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    const state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(false);
+  });
+
+  test("polling preserves an open people menu and its focused switch", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+    const permission = doc.querySelector(".permission-switch") as HTMLButtonElement;
+    permission.focus();
+
+    await joinRoom(room.roomId, "Alex");
+    await Bun.sleep(2100);
+
+    expect(doc.activeElement).toBe(permission);
+    expect(doc.querySelector(".permission-switch")).toBe(permission);
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(2);
+
+    permission.blur();
+    await Bun.sleep(2100);
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(3);
+  }, 6000);
+
+  test("a guest sees no send permission switches", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, guest.cookie);
+
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(2);
+    expect(doc.querySelector(".permission-switch")).toBeNull();
   });
 
   test("theme starts dark and the sun toggle saves a light choice", async () => {
