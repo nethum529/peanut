@@ -182,13 +182,13 @@ describe("chat sidebar", () => {
     const sent = doc.querySelector(".bubble.user");
     expect(sent?.textContent).toContain("Also cover timeouts.");
     expect(sent?.classList.contains("mine")).toBe(true);
-    const hints = [...doc.querySelectorAll(".bubble.user .hint")].map((h) => h.textContent);
-    expect(hints).toContain('on "first paragraph"');
+    expect(doc.querySelector(".bubble .hint")).toBeNull();
     expect(doc.querySelector(".bubble.working")).not.toBeNull();
 
     const state = await realFetch(`${server.url}/api/rooms/${roomId}/state`, { headers: { cookie } });
     const view = await state.json();
     expect(view.rounds[0].instructions[0].words).toBe("Also cover timeouts.");
+    expect(view.rounds[0].instructions[1].anchor.guard).toBe("first paragraph");
   });
 
   test("queued icon buttons use the shared tooltip class and accessible labels", async () => {
@@ -203,7 +203,7 @@ describe("chat sidebar", () => {
     const remove = doc.querySelector('.bubble-action[aria-label="Delete"]');
     const footer = edit?.closest(".bubble-footer");
     expect(edit?.closest(".bubble")?.getAttribute("tabindex")).toBe("0");
-    expect(footer?.querySelector(".hint")).not.toBeNull();
+    expect(footer?.querySelector(".hint")).toBeNull();
     expect(footer?.querySelector(".bubble-actions")).not.toBeNull();
     expect(edit?.getAttribute("title")).toBeNull();
     expect(remove?.getAttribute("title")).toBeNull();
@@ -408,7 +408,7 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".card .remove")).not.toBeNull();
   });
 
-  test("an agent reply renders as an agent bubble with its meta line", async () => {
+  test("an agent reply renders with its meta line", async () => {
     const { roomId, agentToken } = await openRoom("# Plan\n\nfirst paragraph");
     const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
     input.value = "Do the thing.";
@@ -426,6 +426,7 @@ describe("chat sidebar", () => {
     const agent = doc.querySelector(".bubble.agent:not(.working)");
     expect(agent?.textContent).toContain("Done.");
     expect(agent?.textContent).toContain("tests green");
+    expect(agent?.querySelector(".hint")?.textContent).toBe("tests green");
     expect(doc.querySelector(".bubble.working")).toBeNull();
   }, 10_000);
 

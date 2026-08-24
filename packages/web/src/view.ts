@@ -482,10 +482,9 @@ function render(state: RoomStateView): void {
   planShell.append(plan, cursorLayer);
   left.append(planShell);
 
-  const unanchored = renderInstructionMarks(plan, state);
-  const lostIds = new Set(unanchored.map((instruction) => instruction.id));
+  renderInstructionMarks(plan, state);
 
-  body.append(left, renderSidebar(state, plan, lostIds, chatScroll));
+  body.append(left, renderSidebar(state, plan, chatScroll));
   root.append(bar, body);
   renderRemoteCursors(state);
 
@@ -555,24 +554,10 @@ function iconButton(label: string, icon: string, className: string): HTMLButtonE
   return button;
 }
 
-// The short line under a bubble that says where the message points.
-function anchorHint(anchor: InstructionView["anchor"], lost: boolean): string {
-  if (lost) return "anchor lost";
-  if (anchor.type === "range" && typeof anchor.quote === "string" && anchor.quote) {
-    return `on "${anchor.quote}"`;
-  }
-  if (anchor.type === "stamp" && typeof anchor.guard === "string" && anchor.guard) {
-    return `on "${anchor.guard}"`;
-  }
-  if (anchor.type === "stamp") return "on a block";
-  return "";
-}
-
 function userBubble(
   words: string,
   author: { name: string; color: string },
   mine: boolean,
-  hint: string,
 ): HTMLElement {
   const bubble = el("div", "bubble user", undefined);
   if (!mine) {
@@ -581,13 +566,12 @@ function userBubble(
     bubble.append(who);
   }
   bubble.append(el("span", "words", words));
-  if (hint) bubble.append(el("span", "hint", hint));
   if (!mine) setAuthorColor(bubble, author.color, "author-border");
   if (mine) bubble.classList.add("mine");
   return bubble;
 }
 
-function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLElement {
+function renderConversation(state: RoomStateView): HTMLElement {
   const box = el("section", "chat-box");
   box.append(el("h2", undefined, "Conversation"));
   const log = el("div", "chat");
@@ -597,9 +581,7 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
   for (const round of state.rounds) {
     for (const instruction of round.instructions) {
       const mine = instruction.author.id === state.you.id;
-      log.append(
-        userBubble(instruction.words, instruction.author, mine, anchorHint(instruction.anchor, false)),
-      );
+      log.append(userBubble(instruction.words, instruction.author, mine));
     }
     if (round.verdict) log.append(el("span", "chip", verdictLabel(round.verdict)));
     if (round.reply) {
@@ -615,18 +597,11 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
   }
 
   for (const instruction of state.instructions) {
-    const bubble = userBubble(
-      instruction.words,
-      instruction.author,
-      instruction.mine,
-      anchorHint(instruction.anchor, lostIds.has(instruction.id)),
-    );
+    const bubble = userBubble(instruction.words, instruction.author, instruction.mine);
     bubble.classList.add("queued");
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
       bubble.tabIndex = 0;
       const footer = el("div", "bubble-footer");
-      const hint = bubble.querySelector(".hint");
-      if (hint) footer.append(hint);
       const actions = el("div", "bubble-actions");
       const edit = iconButton("Edit", PENCIL_ICON, "bubble-action");
       const remove = iconButton("Delete", TRASH_ICON, "bubble-action");
@@ -713,7 +688,6 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
 function renderSidebar(
   state: RoomStateView,
   plan: HTMLElement,
-  lostIds: Set<string>,
   chatScroll: { stick: boolean; top: number },
 ): HTMLElement {
   const side = el("aside", "sidebar");
@@ -726,7 +700,7 @@ function renderSidebar(
     side.append(row);
   }
 
-  const conversation = renderConversation(state, lostIds);
+  const conversation = renderConversation(state);
   side.append(conversation);
   queueMicrotask(() => {
     const log = conversation.querySelector(".chat");
