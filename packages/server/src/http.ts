@@ -9,6 +9,12 @@ export interface PeanutServer {
 }
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
+const FONT_PATHS = new Set([
+  "/fonts/google-sans-400.woff2",
+  "/fonts/google-sans-500.woff2",
+  "/fonts/google-sans-600.woff2",
+  "/fonts/google-sans-700.woff2",
+]);
 
 interface RelayData {
   roomId: string;
@@ -242,6 +248,13 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return appScript();
   }
 
+  if (request.method === "GET" && FONT_PATHS.has(path)) {
+    const font = embeddedAssets?.fonts[path] ?? Bun.file(webPath(`public${path}`));
+    return new Response(font, {
+      headers: { "content-type": "font/woff2" },
+    });
+  }
+
   // A room link is /<roomId>. The shell is served for every id; the
   // client shows "room not found" when the state fetch says so.
   if (request.method === "GET" && /^\/[A-Za-z0-9]+$/.test(path)) {
@@ -265,6 +278,7 @@ function webPath(relative: string): string {
 export interface WebAssets {
   indexHtml: string;
   appJs: string;
+  fonts: Record<string, Blob>;
 }
 
 let embeddedAssets: WebAssets | null = null;

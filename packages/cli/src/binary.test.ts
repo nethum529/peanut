@@ -65,6 +65,12 @@ describe("compiled binary", () => {
     expect(script.ok).toBe(true);
     expect(script.headers.get("content-type")).toContain("javascript");
     expect((await script.text()).length).toBeGreaterThan(1000);
+    for (const weight of [400, 500, 600, 700]) {
+      const font = await fetch(`${session.server}/fonts/google-sans-${weight}.woff2`);
+      expect(font.ok).toBe(true);
+      expect(font.headers.get("content-type")).toBe("font/woff2");
+      expect((await font.bytes()).length).toBeGreaterThan(1000);
+    }
 
     // End the review; the CLI must exit 1 and stop its server.
     const ended = await fetch(

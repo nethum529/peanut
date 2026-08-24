@@ -19,6 +19,8 @@ describe("web shell", () => {
     const body = await response.text();
     expect(body).toContain('<div id="app">');
     expect(body).toContain("/app.js");
+    expect(body).toContain('font-family: "Google Sans", system-ui, sans-serif');
+    expect(body).not.toContain("fonts.googleapis.com");
   });
 
   test("the client bundle is served as javascript", async () => {
@@ -27,6 +29,15 @@ describe("web shell", () => {
     expect(response.headers.get("content-type")).toContain("javascript");
     const body = await response.text();
     expect(body).toContain("renderMarkdown");
+  });
+
+  test("self-hosted fonts are served as woff2", async () => {
+    for (const weight of [400, 500, 600, 700]) {
+      const response = await fetch(`${server.url}/fonts/google-sans-${weight}.woff2`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("font/woff2");
+      expect(new TextDecoder().decode((await response.bytes()).slice(0, 4))).toBe("wOF2");
+    }
   });
 
   test("api paths never fall through to the shell", async () => {
