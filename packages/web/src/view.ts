@@ -103,8 +103,11 @@ function updateThemeToggle(button: HTMLButtonElement): void {
 }
 
 function renderThemeToggle(): HTMLButtonElement {
-  const button = el("button", "theme-toggle");
-  button.type = "button";
+  const button = iconButton(
+    "Use light theme",
+    SUN_ICON,
+    "theme-toggle icon-tooltip-below",
+  );
   updateThemeToggle(button);
   button.onclick = () => {
     const theme = currentTheme() === "dark" ? "light" : "dark";
