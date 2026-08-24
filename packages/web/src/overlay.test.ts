@@ -61,6 +61,15 @@ describe("document overlay", () => {
     expect(css).toContain("overflow-wrap: anywhere");
   });
 
+  test("loads Google Sans for overlay controls", async () => {
+    const css = await Bun.file(new URL("../public/overlay.css", import.meta.url)).text();
+    expect(css.match(/@font-face/g)).toHaveLength(4);
+    expect(css).toContain('src: url("/fonts/google-sans.woff2") format("woff2")');
+    expect(css).toContain("unicode-range:");
+    expect(css).toContain('font: 14px/1.4 "Google Sans", system-ui, sans-serif');
+    expect(css).toContain('font: 600 12px/18px "Google Sans", system-ui, sans-serif');
+  });
+
   test("captures a guarded selector and keeps overlay controls out of stamp targets", () => {
     expect(sent[0]).toEqual({ message: { type: "ready" }, origin: "http://chrome.test" });
     receive(state());
