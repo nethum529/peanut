@@ -62,7 +62,6 @@
         --on-accent: #e6e9ef;
         --danger: #ff9b9b;
         --shadow: rgba(0, 0, 0, 0.36);
-        --pin-background: color-mix(in srgb, var(--accent-text) 18%, transparent);
         --tooltip-background: #171717;
         --tooltip-ink: #fafafa;
         --tooltip-shadow: rgba(0, 0, 0, 0.18);
@@ -81,7 +80,6 @@
         --on-accent: #fff;
         --danger: #a33;
         --shadow: rgba(16, 20, 27, 0.12);
-        --pin-background: color-mix(in srgb, var(--accent) 14%, transparent);
         --author-lighten: 0%;
       }
       * { box-sizing: border-box; }
@@ -583,87 +581,16 @@
         color: var(--danger);
       }
       .plan-shell {
-        max-width: 760px;
-        margin-block: 28px;
-        margin-inline: auto;
-        position: relative;
+        height: calc(100vh - 53px);
       }
-      .plan {
-        width: 100%;
-        margin: 0;
-        padding: 32px 40px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        line-height: 1.6;
-      }
-      .cursor-layer {
-        position: absolute;
-        inset: 0;
-        z-index: 8;
-        pointer-events: none;
-      }
-      .live-cursor {
-        --cursor-color: var(--accent);
-        position: absolute;
-        width: 0;
-        height: 0;
-        opacity: 1;
-        color: var(--cursor-color);
-        filter: drop-shadow(0 1px 1px var(--shadow));
-      }
-      .live-cursor.stale { opacity: 0; }
-      .live-cursor svg {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 20px;
-        height: 24px;
-        fill: currentColor;
-        stroke: var(--surface);
-        stroke-width: 1.5px;
-        stroke-linejoin: round;
-      }
-      .cursor-name {
-        position: absolute;
-        top: 14px;
-        left: 16px;
+      .plan-frame {
         display: block;
-        width: max-content;
-        max-width: 140px;
-        padding: 2px 7px;
-        overflow: hidden;
-        border-radius: 999px;
-        background: var(--cursor-color);
-        color: var(--on-accent);
-        font-size: 12px;
-        font-weight: 600;
-        line-height: 18px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 12px;
+        background: var(--surface);
       }
-      .live-cursor.right-edge .cursor-name {
-        right: 0;
-        left: auto;
-      }
-      .live-cursor.bottom-edge .cursor-name {
-        top: auto;
-        bottom: 0;
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        .live-cursor {
-          transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
-        }
-      }
-      .plan pre {
-        background: var(--paper);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 12px;
-        overflow-x: auto;
-      }
-      .plan code { font-size: 0.92em; }
-      .plan a { color: var(--accent-text); }
       .join, .notice {
         max-width: 380px;
         margin: 15vh auto;
@@ -692,61 +619,6 @@
         cursor: pointer;
       }
       .error { color: var(--danger); min-height: 1em; margin: 0; }
-      .stamp-hover {
-        outline: 1px solid var(--accent-border);
-        outline-offset: 4px;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      /* Keep .stamped after .stamp-hover: equal specificity, and a
-         stamped block under the cursor must win the author color. */
-      .stamped {
-        outline: 2px solid;
-        outline-offset: 4px;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      mark.pin {
-        background: var(--pin-background);
-        text-decoration: underline;
-        text-decoration-thickness: 2px;
-        text-underline-offset: 3px;
-        cursor: pointer;
-      }
-      .composer, .card {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        max-width: calc(100vw - 16px);
-        padding: 8px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        box-shadow: 0 8px 24px var(--shadow);
-        z-index: 10;
-      }
-      .card { flex-direction: column; align-items: stretch; }
-      .composer input {
-        width: 260px;
-        min-width: 0;
-        padding: 6px 8px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--surface);
-        color: var(--ink);
-        font-size: 14px;
-      }
-      .composer button, .remove {
-        padding: 6px 10px;
-        border: 1px solid var(--accent-border);
-        border-radius: 6px;
-        background: var(--accent);
-        color: var(--on-accent);
-        cursor: pointer;
-      }
-      .instruction { display: flex; gap: 8px; align-items: baseline; }
-      .instruction .words { overflow-wrap: anywhere; }
-      .instruction .author { font-weight: 600; }
       .author-text {
         color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
       }
@@ -756,15 +628,6 @@
       .bubble.user.author-border {
         border-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
       }
-      .author-mark {
-        text-decoration-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
-      }
-      .author-outline {
-        outline-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
-      }
-      .author-cursor {
-        --cursor-color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
-      }
       .ended {
         text-align: center;
         color: var(--muted);
@@ -773,7 +636,6 @@
       @media (max-width: 840px) {
         .body { grid-template-columns: minmax(0, 1fr); }
         .left { padding-inline: 20px; }
-        .plan-shell { margin-block: 20px; }
         .sidebar {
           position: static;
           height: auto;
@@ -787,7 +649,6 @@
       @media (max-width: 480px) {
         .toolbar { gap: 12px; padding-inline: 16px; }
         .left { padding-inline: 16px; }
-        .plan { padding: 24px; }
         .sidebar { padding: 16px; }
       }
     </style>

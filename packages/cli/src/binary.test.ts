@@ -66,6 +66,14 @@ describe("compiled binary", () => {
     expect(script.ok).toBe(true);
     expect(script.headers.get("content-type")).toContain("javascript");
     expect((await script.text()).length).toBeGreaterThan(1000);
+    const overlayScript = await fetch(`${session.server}/overlay.js`);
+    expect(overlayScript.ok).toBe(true);
+    expect(overlayScript.headers.get("content-type")).toContain("javascript");
+    expect((await overlayScript.text()).length).toBeGreaterThan(1000);
+    const overlayStyles = await fetch(`${session.server}/overlay.css`);
+    expect(overlayStyles.ok).toBe(true);
+    expect(overlayStyles.headers.get("content-type")).toContain("text/css");
+    expect(await overlayStyles.text()).toContain(".stamp-hover");
     const fontPaths = [
       "google-sans.woff2",
       "google-sans-latin-ext.woff2",

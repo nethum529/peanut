@@ -1,5 +1,12 @@
 import { parseAnchor } from "./anchors.ts";
-import { RoomError, RoomStore, type Participant } from "./rooms.ts";
+import { renderMarkdown } from "../../web/src/markdown.ts";
+import {
+  RoomError,
+  RoomStore,
+  type ContentType,
+  type Participant,
+  type Room,
+} from "./rooms.ts";
 
 export interface PeanutServer {
   port: number;
@@ -95,18 +102,21 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
 
   if (request.method === "POST" && path === "/api/rooms") {
     const body = await readJson(request);
+    const contentType = contentTypeField(body);
     // A hostless room comes from the CLI: the agent holds the token and
     // the first person who joins by link becomes the host.
     if (body.hostless === true) {
       const { room } = store.createRoom({
         title: stringField(body, "title"),
         content: stringField(body, "content"),
+        contentType,
       });
       return json({ roomId: room.id, agentToken: room.agentToken }, 201);
     }
     const { room, host } = store.createRoom({
       title: stringField(body, "title"),
       content: stringField(body, "content"),
+      contentType,
       hostName: stringField(body, "hostName") || "Host",
     });
     // The agent token is returned once, to the creator only. It never
@@ -134,6 +144,18 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     const roomId = stateMatch[1]!;
     const participant = store.participant(roomId, sessionFromCookie(request, roomId));
     return json(store.stateFor(roomId, participant.sessionId));
+  }
+
+  const documentMatch = path.match(/^\/api\/rooms\/([^/]+)\/document$/);
+  if (request.method === "GET" && documentMatch) {
+    const roomId = documentMatch[1]!;
+    store.participant(roomId, sessionFromCookie(request, roomId));
+    return new Response(roomDocument(store.getRoom(roomId)), {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "sandbox allow-scripts allow-forms allow-popups",
+      },
+    });
   }
 
   const pinMatch = path.match(/^\/api\/rooms\/([^/]+)\/instructions$/);
@@ -248,6 +270,19 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return appScript();
   }
 
+  if (request.method === "GET" && path === "/overlay.js") {
+    return overlayScript();
+  }
+
+  if (request.method === "GET" && path === "/overlay.css") {
+    const css = embeddedAssets
+      ? embeddedAssets.overlayCss
+      : Bun.file(webPath("public/overlay.css"));
+    return new Response(css, {
+      headers: { "content-type": "text/css; charset=utf-8" },
+    });
+  }
+
   if (request.method === "GET" && FONT_PATHS.has(path)) {
     const font = embeddedAssets?.fonts[path] ?? Bun.file(webPath(`public${path}`));
     return new Response(font, {
@@ -281,6 +316,8 @@ function webPath(relative: string): string {
 export interface WebAssets {
   indexHtml: string;
   appJs: string;
+  overlayJs: string;
+  overlayCss: string;
   fonts: Record<string, Blob>;
 }
 
@@ -291,6 +328,7 @@ export function setEmbeddedAssets(assets: WebAssets): void {
 }
 
 let appBundle: string | null = null;
+let overlayBundle: string | null = null;
 
 // The client is TypeScript; Bun bundles it in memory on the first
 // request and the result is reused for the life of the process.
@@ -312,6 +350,27 @@ async function appScript(): Promise<Response> {
     appBundle = await build.outputs[0]!.text();
   }
   return new Response(appBundle, {
+    headers: { "content-type": "text/javascript; charset=utf-8" },
+  });
+}
+
+async function overlayScript(): Promise<Response> {
+  if (embeddedAssets) {
+    return new Response(embeddedAssets.overlayJs, {
+      headers: { "content-type": "text/javascript; charset=utf-8" },
+    });
+  }
+  if (overlayBundle === null) {
+    const build = await Bun.build({
+      entrypoints: [webPath("src/overlay.ts")],
+      target: "browser",
+      format: "iife",
+      minify: false,
+    });
+    if (!build.success) return json({ error: "build_failed" }, 500);
+    overlayBundle = await build.outputs[0]!.text();
+  }
+  return new Response(overlayBundle, {
     headers: { "content-type": "text/javascript; charset=utf-8" },
   });
 }
@@ -432,6 +491,128 @@ function statusFor(code: RoomError["code"]): number {
   }
 }
 
+const OVERLAY_ASSETS =
+  '<link rel="stylesheet" href="/overlay.css">\n<script src="/overlay.js"></script>';
+
+const MARKDOWN_DOCUMENT_STYLES = `
+  @font-face {
+    font-family: "Google Sans";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/google-sans-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+      U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+      U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+      U+2C60-2C7F, U+A720-A7FF;
+  }
+  @font-face {
+    font-family: "Google Sans";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/google-sans.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+      U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+      U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "Google Sans";
+    font-style: italic;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/google-sans-italic-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+      U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+      U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+      U+2C60-2C7F, U+A720-A7FF;
+  }
+  @font-face {
+    font-family: "Google Sans";
+    font-style: italic;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/google-sans-italic.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+      U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+      U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  :root {
+    color-scheme: dark;
+    --document-ink: #e6e9ef;
+    --document-line: #2a3140;
+    --document-paper: #10141b;
+    --document-surface: #171c25;
+    --document-accent: color-mix(in srgb, #0d1b2a 35%, white);
+  }
+  html[data-theme="light"] {
+    color-scheme: light;
+    --document-ink: #2b2e3a;
+    --document-line: #d5dae3;
+    --document-paper: #f3f5f8;
+    --document-surface: #fff;
+    --document-accent: #0d1b2a;
+  }
+  * { box-sizing: border-box; }
+  body.plan {
+    max-width: 760px;
+    min-height: calc(100vh - 56px);
+    margin: 28px auto;
+    padding: 32px 40px;
+    border: 1px solid var(--document-line);
+    border-radius: 12px;
+    color: var(--document-ink);
+    background: var(--document-surface);
+    font-family: "Google Sans", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  html { background: var(--document-paper); }
+  body.plan pre {
+    padding: 12px;
+    overflow-x: auto;
+    border: 1px solid var(--document-line);
+    border-radius: 6px;
+    background: var(--document-paper);
+  }
+  body.plan code { font-size: 0.92em; }
+  body.plan a { color: var(--document-accent); }
+  @media (max-width: 480px) {
+    body.plan { padding: 24px; }
+  }
+`;
+
+function roomDocument(room: Room): string {
+  const source =
+    room.contentType === "html"
+      ? room.content
+      : `<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(room.title)}</title>
+    <style>${MARKDOWN_DOCUMENT_STYLES}</style>
+  </head>
+  <body class="plan">${renderMarkdown(room.content)}</body>
+</html>`;
+  return injectOverlayAssets(source);
+}
+
+export function injectOverlayAssets(html: string): string {
+  if (/<\/body\s*>/i.test(html)) {
+    return html.replace(/<\/body\s*>/i, `${OVERLAY_ASSETS}\n</body>`);
+  }
+  return `${html}\n${OVERLAY_ASSETS}`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 // One cookie per room: the same browser can sit in several rooms at once
 // without the sessions overwriting each other.
 function cookieName(roomId: string): string {
@@ -465,6 +646,13 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 function stringField(body: Record<string, unknown>, key: string): string {
   const value = body[key];
   return typeof value === "string" ? value : "";
+}
+
+function contentTypeField(body: Record<string, unknown>): ContentType {
+  const value = body.contentType;
+  if (value === undefined) return "markdown";
+  if (value === "markdown" || value === "html") return value;
+  throw new RoomError("bad_instruction", "contentType must be markdown or html");
 }
 
 function json(value: unknown, status = 200, headers: HeadersInit = JSON_HEADERS): Response {

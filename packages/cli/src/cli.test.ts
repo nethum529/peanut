@@ -98,6 +98,7 @@ describe("peanut cli", () => {
     }).then((r) => r.json());
     expect(state.you.isHost).toBe(true);
     expect(state.content).toContain("Retry forever");
+    expect(state.contentType).toBe("markdown");
 
     await pinAndFlush(session.roomId, cookie, "Cap the backoff.");
     expect(await proc.exited).toBe(0);
@@ -113,6 +114,34 @@ describe("peanut cli", () => {
     });
     expect(again.status).toBe(201);
   }, 15000);
+
+  test("share sends html and htm files as HTML", async () => {
+    for (const name of ["artifact.html", "artifact.HTM"]) {
+      const path = join(dir, name);
+      await Bun.write(path, '<!doctype html><body><button onclick="window.clicked=true">Try</button></body>');
+      const sessionPath = `${name}.session.json`;
+      const proc = Bun.spawn(
+        [process.execPath, MAIN, "share", path, "--server", server.url, "--session", sessionPath],
+        { cwd: dir, stdout: "pipe", stderr: "pipe" },
+      );
+      const session = await waitForSession(join(dir, sessionPath));
+      const htmlCookie = await joinAsHost(session.roomId);
+      const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+        headers: { cookie: htmlCookie },
+      }).then((response) => response.json());
+      expect(state.contentType).toBe("html");
+      const document = await fetch(`${server.url}/api/rooms/${session.roomId}/document`, {
+        headers: { cookie: htmlCookie },
+      }).then((response) => response.text());
+      expect(document).toContain('onclick="window.clicked=true"');
+      expect(document).toContain('src="/overlay.js"');
+      await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+        method: "POST",
+        headers: { cookie: htmlCookie },
+      });
+      expect(await proc.exited).toBe(1);
+    }
+  }, 20_000);
 
   test("reply lands on the last round and the verdict ends with exit 0 on approve", async () => {
     const plan = await writePlan();

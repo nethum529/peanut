@@ -235,6 +235,7 @@ async function share(flags: Flags): Promise<never> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) fail(`No such file: ${filePath}`);
   const content = await file.text();
+  const contentType = /\.html?$/i.test(filePath) ? "html" : "markdown";
 
   let server = flags.named.get("server") ?? "";
   let serverPid: number | undefined;
@@ -251,6 +252,7 @@ async function share(flags: Flags): Promise<never> {
     body: JSON.stringify({
       title: flags.named.get("title") ?? filePath,
       content,
+      contentType,
       hostless: true,
     }),
   });

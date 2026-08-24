@@ -1,30 +1,13 @@
 import {
-  restoreAnchor,
-  restoreStamp,
-  stampGuard,
-  selectorFor,
-  type RangeAnchor,
-  type StampAnchor,
-} from "./anchors.ts";
-import { renderMarkdown } from "./markdown.ts";
+  isOverlayToChromeMessage,
+  type ChromeToOverlayMessage,
+  type OverlayInstruction,
+  type OverlayParticipant,
+  type OverlayToChromeMessage,
+} from "./protocol.ts";
 
-interface ParticipantView {
-  id: string;
-  name: string;
-  color: string;
-  isHost: boolean;
-  canSend: boolean;
-  you: boolean;
-}
-
-interface InstructionView {
-  id: string;
-  words: string;
-  anchor: { type: string } & Record<string, unknown>;
-  author: { name: string; color: string; isHost: boolean };
-  mine: boolean;
-  pinnedAt: number;
-}
+type ParticipantView = OverlayParticipant;
+type InstructionView = OverlayInstruction;
 
 interface RoundView {
   number: number;
@@ -44,6 +27,7 @@ interface RoomStateView {
   id: string;
   title: string;
   content: string;
+  contentType: "markdown" | "html";
   status: string;
   endedBy?: string;
   verdict?: string;
@@ -75,7 +59,6 @@ interface RemoteCursor {
   y: number;
   staleTimer: ReturnType<typeof setTimeout>;
   removeTimer: ReturnType<typeof setTimeout> | null;
-  element: HTMLElement | null;
 }
 
 // The Lucide users icon, verbatim (lucide.dev, ISC license). The
@@ -146,6 +129,7 @@ function renderThemeToggle(): HTMLButtonElement {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("theme", theme);
     updateThemeToggle(button);
+    postToOverlay({ type: "theme", theme });
 
     void document.body.offsetHeight;
     window.requestAnimationFrame(() => {
@@ -170,6 +154,10 @@ let pendingCursor: { x: number; y: number } | null = null;
 let lastCursorSentAt = 0;
 let currentState: RoomStateView | null = null;
 const remoteCursors = new Map<string, RemoteCursor>();
+let planFrame: HTMLIFrameElement | null = null;
+let overlayReady = false;
+let protocolWindow: Window | null = null;
+const pendingSnapshots = new Map<string, (html: string) => void>();
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -229,44 +217,30 @@ function showJoinDialog(roomId: string): void {
   };
 }
 
-function cursorElement(participant: ParticipantView, cursor: RemoteCursor): HTMLElement {
-  const node = el("div", "live-cursor");
-  node.dataset.participantId = participant.id;
-  node.setAttribute("aria-hidden", "true");
-  setAuthorColor(node, participant.color, "author-cursor");
-  node.innerHTML =
-    '<svg viewBox="0 0 20 24" aria-hidden="true" focusable="false">' +
-    '<path d="M2 1.5v17.8l4.4-4.2 3.6 7.4 3.7-1.8-3.6-7.2h6.1L2 1.5Z"/>' +
-    "</svg>";
-  node.append(el("span", "cursor-name", participant.name));
-  positionCursorElement(node, cursor.x, cursor.y);
-  node.classList.toggle("stale", cursor.removeTimer !== null);
-  return node;
+function postToOverlay(message: ChromeToOverlayMessage): void {
+  planFrame?.contentWindow?.postMessage(message, "*");
 }
 
-function positionCursorElement(node: HTMLElement, x: number, y: number): void {
-  node.style.left = `${x * 100}%`;
-  node.style.top = `${y * 100}%`;
-  node.classList.toggle("right-edge", x > 0.75);
-  node.classList.toggle("bottom-edge", y > 0.9);
+function postOverlayState(): void {
+  if (!currentState) return;
+  postToOverlay({
+    type: "state",
+    instructions: currentState.instructions,
+    participants: currentState.participants,
+    ended: currentState.status === "ended",
+  });
 }
 
-function renderRemoteCursors(state: RoomStateView): void {
-  const layer = document.querySelector(".cursor-layer");
-  if (!layer) return;
-  const participants = new Map(
-    state.participants.map((participant) => [participant.id, participant]),
-  );
-  for (const [participantId, cursor] of remoteCursors) {
-    const participant = participants.get(participantId);
-    if (!participant || participant.you) {
-      removeRemoteCursor(participantId);
-      continue;
-    }
-    const node = cursorElement(participant, cursor);
-    cursor.element = node;
-    layer.append(node);
-  }
+function postRemoteCursors(): void {
+  postToOverlay({
+    type: "cursors",
+    cursors: [...remoteCursors].map(([participantId, cursor]) => ({
+      participantId,
+      x: cursor.x,
+      y: cursor.y,
+      stale: cursor.removeTimer !== null,
+    })),
+  });
 }
 
 function removeRemoteCursor(participantId: string): void {
@@ -274,15 +248,15 @@ function removeRemoteCursor(participantId: string): void {
   if (!cursor) return;
   clearTimeout(cursor.staleTimer);
   if (cursor.removeTimer !== null) clearTimeout(cursor.removeTimer);
-  cursor.element?.remove();
   remoteCursors.delete(participantId);
+  postRemoteCursors();
 }
 
 function fadeRemoteCursor(participantId: string): void {
   const cursor = remoteCursors.get(participantId);
   if (!cursor || cursor.removeTimer !== null) return;
-  cursor.element?.classList.add("stale");
   cursor.removeTimer = setTimeout(() => removeRemoteCursor(participantId), CURSOR_FADE_MS);
+  postRemoteCursors();
 }
 
 function clearRemoteCursors(): void {
@@ -334,9 +308,8 @@ function receiveCursorFrame(data: unknown): void {
     previous.x = message.x;
     previous.y = message.y;
     previous.removeTimer = null;
-    previous.element?.classList.remove("stale");
-    if (previous.element) positionCursorElement(previous.element, message.x, message.y);
     previous.staleTimer = setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS);
+    postRemoteCursors();
     return;
   }
 
@@ -345,14 +318,9 @@ function receiveCursorFrame(data: unknown): void {
     y: message.y,
     staleTimer: setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS),
     removeTimer: null,
-    element: null,
   };
   remoteCursors.set(participant.id, cursor);
-  const layer = document.querySelector(".cursor-layer");
-  if (layer) {
-    cursor.element = cursorElement(participant, cursor);
-    layer.append(cursor.element);
-  }
+  postRemoteCursors();
 }
 
 function disconnectRelay(): void {
@@ -415,13 +383,8 @@ function sendCursorLeave(): void {
   lastCursorSentAt = performance.now();
 }
 
-function queueCursorPosition(plan: HTMLElement, event: PointerEvent): void {
-  const rect = plan.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return;
-  pendingCursor = {
-    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
-  };
+function queueCursorPosition(x: number, y: number): void {
+  pendingCursor = { x, y };
   if (cursorSendTimer !== null) return;
   const wait = Math.max(0, CURSOR_SEND_MS - (performance.now() - lastCursorSentAt));
   if (wait === 0) {
@@ -429,6 +392,97 @@ function queueCursorPosition(plan: HTMLElement, event: PointerEvent): void {
   } else {
     cursorSendTimer = setTimeout(flushCursorPosition, wait);
   }
+}
+
+let snapshotSequence = 0;
+
+function requestOverlaySnapshot(): Promise<string> {
+  if (!overlayReady) return Promise.resolve("");
+  const requestId = `snapshot-${++snapshotSequence}`;
+  return new Promise((resolve) => {
+    pendingSnapshots.set(requestId, resolve);
+    postToOverlay({ type: "snapshot-request", requestId });
+    setTimeout(() => {
+      const pending = pendingSnapshots.get(requestId);
+      if (!pending) return;
+      pendingSnapshots.delete(requestId);
+      pending("");
+    }, 2000);
+  });
+}
+
+async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<void> {
+  if (!currentState) return;
+  if (message.type === "ready") {
+    overlayReady = true;
+    postOverlayState();
+    postRemoteCursors();
+    postToOverlay({ type: "theme", theme: currentTheme() });
+    return;
+  }
+  if (message.type === "pin") {
+    await postJson(`/api/rooms/${currentState.id}/instructions`, {
+      words: message.words,
+      anchor: message.anchor,
+    });
+    await refresh(currentState.id);
+    return;
+  }
+  if (message.type === "unpin") {
+    await fetch(`/api/rooms/${currentState.id}/instructions/${message.instructionId}`, {
+      method: "DELETE",
+    });
+    await refresh(currentState.id);
+    return;
+  }
+  if (message.type === "cursor") {
+    queueCursorPosition(message.x, message.y);
+    return;
+  }
+  if (message.type === "cursor-leave") {
+    sendCursorLeave();
+    return;
+  }
+  if (message.type === "snapshot") {
+    const pending = pendingSnapshots.get(message.requestId);
+    if (pending) {
+      pendingSnapshots.delete(message.requestId);
+      pending(message.html);
+    }
+  }
+}
+
+export function handleOverlayMessage(event: MessageEvent): boolean {
+  if (
+    !planFrame?.contentWindow ||
+    event.source !== planFrame.contentWindow ||
+    event.origin !== "null" ||
+    !isOverlayToChromeMessage(event.data)
+  ) {
+    return false;
+  }
+  void actOnOverlayMessage(event.data);
+  return true;
+}
+
+function installChromeProtocol(): void {
+  if (protocolWindow === window) return;
+  protocolWindow?.removeEventListener("message", handleOverlayMessage);
+  protocolWindow = window;
+  protocolWindow.addEventListener("message", handleOverlayMessage);
+}
+
+function ensurePlanFrame(roomId: string): HTMLIFrameElement {
+  if (planFrame) return planFrame;
+  // The injected overlay sends `ready` after it starts. The chrome never
+  // reads contentDocument because the sandbox gives it an opaque origin.
+  const frame = el("iframe", "plan-frame");
+  frame.title = "Review document";
+  frame.src = `/api/rooms/${roomId}/document`;
+  frame.setAttribute("sandbox", "allow-scripts allow-forms allow-popups");
+  planFrame = frame;
+  overlayReady = false;
+  return frame;
 }
 
 function render(state: RoomStateView): void {
@@ -443,12 +497,6 @@ function render(state: RoomStateView): void {
       previousLog.scrollTop + previousLog.clientHeight >= previousLog.scrollHeight - 40,
     top: previousLog?.scrollTop ?? 0,
   };
-  root.replaceChildren();
-  // Floating boxes live on document.body; a re-render must not leave
-  // one pointing at a view that no longer exists.
-  closeCard();
-  document.querySelector(".composer")?.remove();
-
   const bar = el("header", "toolbar");
   const brand = el("span", "wordmark", "Peanut");
   const title = el("span", "title", state.title || "Untitled review");
@@ -472,27 +520,22 @@ function render(state: RoomStateView): void {
   toolbarActions.append(people, renderThemeToggle());
   bar.append(brand, title, toolbarActions);
 
-  const body = el("div", "body");
-  const left = el("div", "left");
-  const planShell = el("div", "plan-shell");
-  const plan = el("main", "plan");
-  plan.id = "plan";
-  plan.innerHTML = renderMarkdown(state.content);
-  const cursorLayer = el("div", "cursor-layer");
-  planShell.append(plan, cursorLayer);
-  left.append(planShell);
-
-  renderInstructionMarks(plan, state);
-
-  body.append(left, renderSidebar(state, plan, chatScroll));
-  root.append(bar, body);
-  renderRemoteCursors(state);
-
-  if (state.status !== "ended") {
-    wireComposer(plan, state);
-    plan.onpointermove = (event) => queueCursorPosition(plan, event);
-    plan.onpointerleave = sendCursorLeave;
+  const sidebar = renderSidebar(state, chatScroll);
+  const existingBody = root.querySelector<HTMLElement>(".body");
+  const existingBar = root.querySelector<HTMLElement>(".toolbar");
+  if (existingBody && planFrame?.isConnected) {
+    existingBar?.replaceWith(bar);
+    existingBody.querySelector(".sidebar")?.replaceWith(sidebar);
+  } else {
+    const body = el("div", "body");
+    const left = el("div", "left");
+    const planShell = el("div", "plan-shell");
+    planShell.append(ensurePlanFrame(state.id));
+    left.append(planShell);
+    body.append(left, sidebar);
+    root.replaceChildren(bar, body);
   }
+  postOverlayState();
 }
 
 function verdictLabel(verdict: string): string {
@@ -737,7 +780,6 @@ function renderConversation(state: RoomStateView): HTMLElement {
 
 function renderSidebar(
   state: RoomStateView,
-  plan: HTMLElement,
   chatScroll: { stick: boolean; top: number },
 ): HTMLElement {
   const side = el("aside", "sidebar");
@@ -787,22 +829,26 @@ function renderSidebar(
   }
 
   if (!ended && (state.you.isHost || state.you.canSend)) {
-    side.append(renderSendControls(state, plan));
+    side.append(renderSendControls(state));
   }
 
   return side;
 }
 
-function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElement {
+function renderSendControls(state: RoomStateView): HTMLElement {
   const box = el("section", "send");
   const buttons = el("div", "sidebar-button-stack");
   box.append(el("h2", undefined, "Send to agent"));
   const send = el("button", "send-button", "Send to agent");
   const note = el("p", "note");
   send.onclick = async () => {
-    // The current rendered plan is the round's DOM snapshot.
+    const domSnapshot = await requestOverlaySnapshot();
+    if (!domSnapshot) {
+      note.textContent = "The document overlay is not ready yet.";
+      return;
+    }
     const response = await postJson(`/api/rooms/${state.id}/flush`, {
-      domSnapshot: plan.innerHTML,
+      domSnapshot,
       nextStep: "",
     });
     if (response.ok) {
@@ -838,210 +884,15 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
   return box;
 }
 
-// Marks every restorable instruction in the plan and returns the
-// instructions whose anchor no longer matches the content.
-function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): InstructionView[] {
-  const unanchored: InstructionView[] = [];
-  const stamps = new Map<Element, InstructionView[]>();
-  for (const instruction of state.instructions) {
-    // A chat message points at nothing; it lives in the sidebar only.
-    if (instruction.anchor.type === "chat") continue;
-    if (instruction.anchor.type === "stamp") {
-      const target = restoreStamp(plan, instruction.anchor as unknown as StampAnchor);
-      if (!target) {
-        unanchored.push(instruction);
-        continue;
-      }
-      stamps.set(target, [...(stamps.get(target) ?? []), instruction]);
-      continue;
-    }
-    if (instruction.anchor.type !== "range") {
-      unanchored.push(instruction);
-      continue;
-    }
-    const segments = restoreAnchor(plan, instruction.anchor as unknown as RangeAnchor);
-    if (!segments) {
-      unanchored.push(instruction);
-      continue;
-    }
-    for (const segment of segments) {
-      let node = segment.node;
-      if (segment.start > 0) node = node.splitText(segment.start);
-      if (segment.end - segment.start < node.data.length) node.splitText(segment.end - segment.start);
-      const mark = document.createElement("mark");
-      mark.className = "pin";
-      mark.dataset.instructionId = instruction.id;
-      setAuthorColor(mark, instruction.author.color, "author-mark");
-      node.parentNode?.replaceChild(mark, node);
-      mark.append(node);
-      mark.onclick = (event) => {
-        event.stopPropagation();
-        showCard(mark, state, [instruction]);
-      };
-    }
-  }
-  for (const [target, list] of stamps) {
-    const element = target as HTMLElement;
-    element.classList.add("stamped");
-    setAuthorColor(element, list[list.length - 1]!.author.color, "author-outline");
-  }
-  return unanchored;
-}
-
-function instructionRow(state: RoomStateView, instruction: InstructionView): HTMLElement {
-  const row = el("div", "instruction");
-  const author = el("span", "author", instruction.author.name);
-  setAuthorColor(author, instruction.author.color, "author-text");
-  row.append(author, el("span", "words", instruction.words));
-  if (
-    (instruction.mine || state.you.isHost || state.you.canSend) &&
-    state.status !== "ended"
-  ) {
-    const remove = el("button", "remove", "Remove");
-    remove.onclick = async () => {
-      await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
-      refresh(state.id);
-    };
-    row.append(remove);
-  }
-  return row;
-}
-
-function closeCard(): void {
-  document.querySelector(".card")?.remove();
-}
-
-function showCard(mark: HTMLElement, state: RoomStateView, list: InstructionView[]): void {
-  closeCard();
-  const card = el("div", "card");
-  for (const instruction of list) {
-    card.append(instructionRow(state, instruction));
-  }
-  positionNear(card, mark);
-}
-
-let hovered: HTMLElement | null = null;
-
-function clearHover(): void {
-  hovered?.classList.remove("stamp-hover");
-  hovered = null;
-}
-
-// Inline markup inside a block. A stamp always targets the block, so
-// the pointer never jitters between a paragraph and its bold or link
-// fragments, and a highlight span is never a target.
-const INLINE_TAGS = new Set(["MARK", "STRONG", "EM", "CODE", "A"]);
-
-function stampTarget(plan: HTMLElement, node: EventTarget | null): HTMLElement | null {
-  if (!(node instanceof Element)) return null;
-  let element: Element | null = node;
-  while (element && element !== plan && INLINE_TAGS.has(element.tagName)) {
-    element = element.parentElement;
-  }
-  if (!element || element === plan || !plan.contains(element)) return null;
-  return element as HTMLElement;
-}
-
-function openComposer(
-  state: RoomStateView,
-  anchor: StampAnchor,
-  target: HTMLElement,
-  placeholder: string,
-): void {
-  document.querySelector(".composer")?.remove();
-  const composer = el("div", "composer");
-  const input = el("input");
-  input.placeholder = placeholder;
-  input.maxLength = 500;
-  const pin = el("button", undefined, "Pin");
-  composer.append(input, pin);
-  positionNear(composer, target);
-  input.focus();
-
-  const submit = async (): Promise<void> => {
-    const words = input.value.trim();
-    if (!words) return;
-    const response = await fetch(`/api/rooms/${state.id}/instructions`, {
-      method: "POST",
-      body: JSON.stringify({ words, anchor }),
-    });
-    composer.remove();
-    if (response.ok) {
-      window.getSelection()?.removeAllRanges();
-      refresh(state.id);
-    }
-  };
-  pin.onclick = submit;
-  input.onkeydown = (key) => {
-    if (key.key === "Enter") submit();
-    if (key.key === "Escape") composer.remove();
-  };
-}
-
-// The pin gesture: hovering outlines a block and clicking stamps it.
-function wireComposer(plan: HTMLElement, state: RoomStateView): void {
-  document.onclick = (event) => {
-    closeCard();
-    if (!(event.target as HTMLElement).closest(".composer")) {
-      document.querySelector(".composer")?.remove();
-    }
-  };
-  plan.onmouseover = (event) => {
-    const target = stampTarget(plan, event.target);
-    if (target === hovered) return;
-    clearHover();
-    if (target) {
-      target.classList.add("stamp-hover");
-      hovered = target;
-    }
-  };
-  plan.onmouseleave = () => {
-    clearHover();
-  };
-  plan.onclick = (event) => {
-    const target = stampTarget(plan, event.target);
-    if (!target) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const selector = selectorFor(target, plan);
-    if (!selector) return;
-    openComposer(
-      state,
-      { type: "stamp", selector, guard: stampGuard(target) },
-      target,
-      "Pin an instruction to this block",
-    );
-  };
-}
-
-function positionNear(box: HTMLElement, target: HTMLElement): void {
-  const rect = target.getBoundingClientRect();
-  box.style.position = "absolute";
-  document.body.append(box);
-  const boxRect = box.getBoundingClientRect();
-  const viewportStart = window.scrollX + 8;
-  const viewportEnd = window.scrollX + window.innerWidth - boxRect.width - 8;
-  const desiredLeft = rect.left + window.scrollX;
-  box.style.left = `${Math.max(viewportStart, Math.min(desiredLeft, viewportEnd))}px`;
-
-  const below = rect.bottom + window.scrollY + 8;
-  const above = rect.top + window.scrollY - boxRect.height - 8;
-  const toolbarHeight = document.querySelector<HTMLElement>(".toolbar")?.offsetHeight ?? 0;
-  const viewportTop = window.scrollY + toolbarHeight + 8;
-  const viewportBottom = window.scrollY + window.innerHeight - 8;
-  const shouldPlaceAbove = below + boxRect.height > viewportBottom && above >= viewportTop;
-  box.style.top = `${shouldPlaceAbove ? above : below}px`;
-}
-
 async function refresh(roomId: string): Promise<void> {
   const response = await fetch(`/api/rooms/${roomId}/state`);
   if (!response.ok) return;
   const state = (await response.json()) as RoomStateView;
   const serialized = JSON.stringify(state);
   if (serialized === lastRendered) return;
-  // Never re-render over an open composer or inline edit; the textarea
-  // in progress wins.
-  if (document.querySelector(".composer, .inline-edit")) return;
+  // Never re-render over an inline sidebar edit; the textarea in
+  // progress wins. The frame overlay owns its own composer.
+  if (document.querySelector(".inline-edit")) return;
   // Keep the participants menu and its focused switch stable. A later
   // poll applies the room state after the pointer and focus leave.
   const people = document.querySelector(".people");
@@ -1053,6 +904,7 @@ async function refresh(roomId: string): Promise<void> {
 }
 
 function start(roomId: string, state: RoomStateView): void {
+  installChromeProtocol();
   lastRendered = JSON.stringify(state);
   render(state);
   if (state.status === "ended") disconnectRelay();
@@ -1071,9 +923,14 @@ export function resetView(): void {
   pendingCursor = null;
   lastCursorSentAt = 0;
   currentState = null;
+  overlayReady = false;
+  planFrame = null;
+  for (const pending of pendingSnapshots.values()) pending("");
+  pendingSnapshots.clear();
+  if (protocolWindow) protocolWindow.removeEventListener("message", handleOverlayMessage);
+  protocolWindow = null;
   disconnectRelay();
   lastRendered = "";
-  hovered = null;
 }
 
 export async function boot(): Promise<void> {
