@@ -101,7 +101,11 @@
       }
       .wordmark { font-weight: 700; color: var(--accent-text); }
       .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .people { position: relative; display: flex; }
+      .people {
+        --people-menu-open-delay: 500ms;
+        position: relative;
+        display: flex;
+      }
       .people-icon {
         display: grid;
         place-items: center;
@@ -113,10 +117,20 @@
       }
       .people-icon svg { width: 20px; height: 20px; }
       .people:hover .people-icon { color: var(--accent-text); }
+      @keyframes hide-people-tooltip {
+        to { opacity: 0; visibility: hidden; }
+      }
       .people:hover .people-icon::before,
       .people:hover .people-icon::after,
       .people:focus-within .people-icon::before,
       .people:focus-within .people-icon::after {
+        animation: hide-people-tooltip 1ms linear var(--people-menu-open-delay) forwards;
+      }
+      .people:has(.people-menu:hover) .people-icon::before,
+      .people:has(.people-menu:hover) .people-icon::after,
+      .people:has(.people-menu:focus-within) .people-icon::before,
+      .people:has(.people-menu:focus-within) .people-icon::after {
+        animation: none;
         opacity: 0;
         visibility: hidden;
       }
@@ -151,8 +165,13 @@
         z-index: 20;
       }
       .people:hover .people-menu,
-      .people:focus-within .people-menu,
-      .people-menu:hover {
+      .people:focus-within .people-menu {
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear;
+      }
+      .people .people-menu:hover,
+      .people .people-menu:focus-within {
         opacity: 1;
         visibility: visible;
         transition: opacity 160ms ease;
@@ -184,7 +203,11 @@
         background: var(--line);
         cursor: pointer;
       }
-      .permission-switch[aria-checked="true"] { background: var(--accent); }
+      .permission-switch.is-checked { background: var(--accent-text); }
+      .permission-switch[aria-busy="true"] {
+        opacity: 0.55;
+        cursor: wait;
+      }
       .permission-switch:focus-visible {
         outline: 2px solid var(--accent-border);
         outline-offset: 2px;
@@ -198,7 +221,7 @@
         box-shadow: 0 1px 2px var(--shadow);
         transform: translateX(0);
       }
-      .permission-switch[aria-checked="true"] .permission-switch-thumb {
+      .permission-switch.is-checked .permission-switch-thumb {
         transform: translateX(14px);
       }
       .body {

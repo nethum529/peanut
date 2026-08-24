@@ -543,7 +543,8 @@ function renderSendPermissionSwitch(
   button.type = "button";
   button.setAttribute("role", "switch");
   button.setAttribute("aria-label", `Allow ${participant.name} to send`);
-  button.setAttribute("aria-checked", String(participant.canSend));
+  button.dataset.participantId = participant.id;
+  setPermissionSwitchChecked(button, participant.canSend);
   thumb.setAttribute("aria-hidden", "true");
   button.append(thumb);
 
@@ -552,20 +553,25 @@ function renderSendPermissionSwitch(
     pending = true;
     const previous = button.getAttribute("aria-checked") === "true";
     const canSend = !previous;
-    button.setAttribute("aria-checked", String(canSend));
+    setPermissionSwitchChecked(button, canSend);
+    button.setAttribute("aria-busy", "true");
+    button.focus();
     try {
       const response = await postJson(`/api/rooms/${state.id}/grants`, {
         participantId: participant.id,
         canSend,
       });
       if (!response.ok) {
-        button.setAttribute("aria-checked", String(previous));
+        setPermissionSwitchChecked(button, previous);
         return;
       }
-      await refresh(state.id);
+      participant.canSend = canSend;
+      lastRendered = JSON.stringify(state);
     } catch {
-      button.setAttribute("aria-checked", String(previous));
+      setPermissionSwitchChecked(button, previous);
     } finally {
+      button.removeAttribute("aria-busy");
+      button.focus();
       pending = false;
     }
   };
@@ -575,6 +581,11 @@ function renderSendPermissionSwitch(
     button.click();
   };
   return button;
+}
+
+function setPermissionSwitchChecked(button: HTMLButtonElement, checked: boolean): void {
+  button.setAttribute("aria-checked", String(checked));
+  button.classList.toggle("is-checked", checked);
 }
 
 function userBubble(
@@ -1002,6 +1013,10 @@ async function refresh(roomId: string): Promise<void> {
   // Never re-render over an open composer or inline edit; the textarea
   // in progress wins.
   if (document.querySelector(".composer, .inline-edit")) return;
+  // Keep the participants menu and its focused switch stable. A later
+  // poll applies the room state after the pointer and focus leave.
+  const people = document.querySelector(".people");
+  if (people && (people.matches(":hover") || people.contains(document.activeElement))) return;
   lastRendered = serialized;
   render(state);
   if (state.status === "ended") disconnectRelay();
