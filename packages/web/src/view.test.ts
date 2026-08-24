@@ -89,15 +89,23 @@ async function openExistingRoom(
   sessionCookie: string,
   savedTheme?: "dark" | "light",
 ): Promise<void> {
+  installRoomWindow(roomId, sessionCookie, savedTheme);
+  await boot();
+  await Bun.sleep(50);
+  connectFakeOverlay();
+}
+
+function installRoomWindow(
+  roomId: string,
+  sessionCookie: string,
+  savedTheme?: "dark" | "light",
+): void {
   cookie = sessionCookie;
   win = new Window({ url: `${server.url}/${roomId}` });
   if (savedTheme) win.localStorage.setItem("theme", savedTheme);
   doc = win.document as unknown as Document;
   doc.body.innerHTML = '<div id="app"></div>';
   setGlobals();
-  await boot();
-  await Bun.sleep(50);
-  connectFakeOverlay();
 }
 
 function frame(): HTMLIFrameElement {
@@ -306,6 +314,134 @@ describe("chat sidebar", () => {
     expect(html).not.toContain(".grant-row");
   });
 
+  test("an ended room shows the chrome banner and removes action controls", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    await joinRoom(room.roomId, "Sam");
+    await realFetch(`${server.url}/api/rooms/${room.roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ words: "Keep this note.", anchor: { type: "chat" } }),
+    });
+    await realFetch(`${server.url}/api/rooms/${room.roomId}/end`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: "{}",
+    });
+
+    await openExistingRoom(room.roomId, hostCookie);
+
+    const banner = doc.querySelector(".room-banner");
+    expect(banner?.textContent).toBe("This review has ended");
+    expect(banner?.getAttribute("role")).toBe("status");
+    expect(banner?.getAttribute("aria-live")).toBe("polite");
+    expect(banner?.parentElement?.id).toBe("app");
+    expect(banner?.previousElementSibling?.classList.contains("toolbar")).toBe(true);
+    expect(doc.querySelector("iframe.plan-frame")).not.toBeNull();
+    expect(doc.querySelector(".message-composer")).toBeNull();
+    expect(doc.querySelector(".bubble-actions")).toBeNull();
+    expect(doc.querySelector(".permission-switch")).toBeNull();
+    expect(doc.querySelector(".send-button")).toBeNull();
+    expect(doc.querySelector(".end-button")).toBeNull();
+  });
+
+  test("a failed poll shows the connection banner and recovery clears it", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    const banner = doc.querySelector(".room-banner");
+    expect(banner?.textContent).toBe("");
+    expect(banner?.getAttribute("role")).toBe("status");
+    expect(banner?.previousElementSibling?.classList.contains("toolbar")).toBe(true);
+    const installedFetch = globalThis.fetch;
+    let failStateFetch = true;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      if (failStateFetch && String(input).endsWith("/state")) {
+        return Promise.reject(new TypeError("connection lost"));
+      }
+      return installedFetch(input, init);
+    }) as typeof fetch;
+
+    await Bun.sleep(2200);
+    expect(doc.querySelector(".room-banner")).toBe(banner);
+    expect(banner?.textContent).toBe("Connection lost. Trying again...");
+    expect(doc.querySelector(".message-composer")).not.toBeNull();
+
+    failStateFetch = false;
+    await Bun.sleep(2200);
+    expect(doc.querySelector(".room-banner")).toBe(banner);
+    expect(banner?.textContent).toBe("");
+  }, 6000);
+
+  test("an initial state fetch failure updates the existing connection status", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    installRoomWindow(room.roomId, cookie);
+    const installedFetch = globalThis.fetch;
+    let rejectState: ((reason?: unknown) => void) | undefined;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/state")) {
+        return new Promise<Response>((_resolve, reject) => {
+          rejectState = reject;
+        });
+      }
+      return installedFetch(input, init);
+    }) as typeof fetch;
+
+    const booting = boot();
+    await Bun.sleep(0);
+    const banner = doc.querySelector(".room-banner");
+    expect(banner?.textContent).toBe("");
+    expect(banner?.getAttribute("role")).toBe("status");
+    rejectState?.(new TypeError("connection lost"));
+    await booting;
+
+    expect(doc.querySelector(".room-banner")).toBe(banner);
+    expect(banner?.textContent).toBe("Connection lost. Trying again...");
+  });
+
+  test("a network error while queueing shows the connection banner at once", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    const installedFetch = globalThis.fetch;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).includes("/instructions") && init?.method === "POST") {
+        return Promise.reject(new TypeError("connection lost"));
+      }
+      return installedFetch(input, init);
+    }) as typeof fetch;
+
+    const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    input.value = "Queue while offline.";
+    pressEnter(input);
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".room-banner")?.textContent).toBe(
+      "Connection lost. Trying again...",
+    );
+    expect(input.value).toBe("Queue while offline.");
+    expect(doc.querySelector(".message-composer")).not.toBeNull();
+  });
+
+  test("a room-ended response on delete switches the page to ended at once", async () => {
+    const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
+    const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
+    input.value = "Delete after end.";
+    pressEnter(input);
+    await Bun.sleep(150);
+    expect(doc.querySelector('.bubble-action[aria-label="Delete"]')).not.toBeNull();
+
+    await realFetch(`${server.url}/api/rooms/${roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+      body: "{}",
+    });
+    click(doc.querySelector('.bubble-action[aria-label="Delete"]')!);
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".room-banner")?.textContent).toBe("This review has ended");
+    expect(doc.querySelector(".bubble-actions")).toBeNull();
+    expect(doc.querySelector(".message-composer")).toBeNull();
+    expect(doc.querySelector(".send-button")).toBeNull();
+    expect(doc.querySelector("iframe.plan-frame")).not.toBeNull();
+  });
+
   test("queued icon buttons stay crisp in the bottom-right footer", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     postFromOverlay({
@@ -452,7 +588,7 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".bubble.queued .words")?.textContent).toBe("Keep these words.");
   }, 10_000);
 
-  test("a failed inline save shows an error and keeps the textarea open", async () => {
+  test("a room-ended inline save switches the page to ended", async () => {
     const { roomId } = await openRoom("# Plan\n\nfirst paragraph");
     const composer = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
     composer.value = "Edit after end.";
@@ -469,9 +605,10 @@ describe("chat sidebar", () => {
     pressEnter(input);
     await Bun.sleep(100);
 
-    expect(doc.querySelector(".inline-edit")).toBe(input);
-    expect(input.getAttribute("aria-invalid")).toBe("true");
-    expect(doc.querySelector(".inline-edit-error")?.textContent).not.toBe("");
+    expect(input.isConnected).toBe(false);
+    expect(doc.querySelector(".inline-edit")).toBeNull();
+    expect(doc.querySelector(".room-banner")?.textContent).toBe("This review has ended");
+    expect(doc.querySelector(".message-composer")).toBeNull();
   });
 
   test("the delete button removes a queued message and the bubble goes away", async () => {
@@ -817,7 +954,12 @@ describe("chat sidebar", () => {
     const narrow = html.match(/@media \(max-width: 840px\) \{([\s\S]*?)\n      \}/)?.[1] ?? "";
 
     expect(bodyRule).toContain("grid-template-columns: minmax(0, 1fr) 320px");
-    expect(bodyRule).toContain("height: calc(100vh - 53px)");
+    expect(bodyRule).toContain("height: calc(100vh - var(--chrome-stack-height))");
+    expect(html).toContain("#app { --chrome-stack-height: 53px; }");
+    expect(html).toContain(
+      "#app:has(.room-banner:not(:empty)) { --chrome-stack-height: 90px; }",
+    );
+    expect(html).toContain(".room-banner:empty { display: none; }");
     expect(bodyRule).toContain("overflow: hidden");
     expect(leftRule).toContain("height: 100%");
     expect(leftRule).toContain("padding: 0");
