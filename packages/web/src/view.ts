@@ -1,5 +1,4 @@
 import {
-  captureRange,
   restoreAnchor,
   restoreStamp,
   stampGuard,
@@ -156,10 +155,6 @@ let pendingCursor: { x: number; y: number } | null = null;
 let lastCursorSentAt = 0;
 let currentState: RoomStateView | null = null;
 const remoteCursors = new Map<string, RemoteCursor>();
-// Stamp mode lives outside render, so a state refresh keeps the
-// current choice. It starts on: block stamping is the main gesture,
-// and text selection pinning is one toggle away.
-let stampMode = true;
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -458,16 +453,6 @@ function render(state: RoomStateView): void {
   menu.append(panel);
   people.append(icon, menu);
   bar.append(brand, title, people, renderThemeToggle());
-  if (state.status !== "ended") {
-    const stamp = el("button", "stamp-toggle", "Stamp");
-    if (stampMode) stamp.classList.add("on");
-    stamp.onclick = () => {
-      stampMode = !stampMode;
-      stamp.classList.toggle("on", stampMode);
-      if (!stampMode) clearHover();
-    };
-    bar.append(stamp);
-  }
 
   const body = el("div", "body");
   const left = el("div", "left");
@@ -485,11 +470,7 @@ function render(state: RoomStateView): void {
   root.append(bar, body);
   renderRemoteCursors(state);
 
-  if (state.status === "ended") {
-    // Drop the selection handler from an earlier render, so no new
-    // composer can open into an ended room.
-    document.onmouseup = null;
-  } else {
+  if (state.status !== "ended") {
     wireComposer(plan, state);
     plan.onpointermove = (event) => queueCursorPosition(plan, event);
     plan.onpointerleave = sendCursorLeave;
@@ -858,11 +839,6 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
     const element = target as HTMLElement;
     element.classList.add("stamped");
     setAuthorColor(element, list[list.length - 1]!.author.color, "author-outline");
-    element.onclick = (event) => {
-      if (stampMode) return;
-      event.stopPropagation();
-      showCard(element, state, list);
-    };
   }
   return unanchored;
 }
@@ -923,8 +899,8 @@ function stampTarget(plan: HTMLElement, node: EventTarget | null): HTMLElement |
 
 function openComposer(
   state: RoomStateView,
-  anchor: RangeAnchor | StampAnchor,
-  target: Range | HTMLElement,
+  anchor: StampAnchor,
+  target: HTMLElement,
   placeholder: string,
 ): void {
   document.querySelector(".composer")?.remove();
@@ -957,28 +933,15 @@ function openComposer(
   };
 }
 
-// The pin gestures: a text selection opens the range composer, and in
-// stamp mode a hover outlines the block while a click stamps it.
+// The pin gesture: hovering outlines a block and clicking stamps it.
 function wireComposer(plan: HTMLElement, state: RoomStateView): void {
   document.onclick = (event) => {
     closeCard();
-    if (stampMode && !(event.target as HTMLElement).closest(".composer")) {
+    if (!(event.target as HTMLElement).closest(".composer")) {
       document.querySelector(".composer")?.remove();
     }
   };
-  document.onmouseup = (event) => {
-    if (stampMode) return;
-    if ((event.target as HTMLElement).closest(".composer, .card")) return;
-    document.querySelector(".composer")?.remove();
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-    const range = selection.getRangeAt(0);
-    const anchor = captureRange(range, plan);
-    if (!anchor) return;
-    openComposer(state, anchor, range, "Pin an instruction to this text");
-  };
   plan.onmouseover = (event) => {
-    if (!stampMode) return;
     const target = stampTarget(plan, event.target);
     if (target === hovered) return;
     clearHover();
@@ -991,7 +954,6 @@ function wireComposer(plan: HTMLElement, state: RoomStateView): void {
     clearHover();
   };
   plan.onclick = (event) => {
-    if (!stampMode) return;
     const target = stampTarget(plan, event.target);
     if (!target) return;
     event.preventDefault();
@@ -1007,7 +969,7 @@ function wireComposer(plan: HTMLElement, state: RoomStateView): void {
   };
 }
 
-function positionNear(box: HTMLElement, target: Range | HTMLElement): void {
+function positionNear(box: HTMLElement, target: HTMLElement): void {
   const rect = target.getBoundingClientRect();
   box.style.position = "absolute";
   box.style.left = `${Math.max(8, rect.left + window.scrollX)}px`;
@@ -1051,7 +1013,6 @@ export function resetView(): void {
   currentState = null;
   disconnectRelay();
   lastRendered = "";
-  stampMode = true;
   hovered = null;
 }
 
