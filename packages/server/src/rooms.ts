@@ -38,6 +38,7 @@ export interface Room {
   id: string;
   title: string;
   content: string;
+  contentVersion: number;
   contentType: ContentType;
   createdAt: number;
   status: "live" | "ended";
@@ -84,6 +85,7 @@ export interface RoomStateView {
   id: string;
   title: string;
   content: string;
+  contentVersion: number;
   contentType: ContentType;
   status: "live" | "ended";
   endedBy?: "user" | "agent";
@@ -145,6 +147,7 @@ export class RoomStore {
       id: randomId(),
       title: input.title.trim() || "Review",
       content: input.content,
+      contentVersion: 1,
       contentType: input.contentType ?? "markdown",
       createdAt: Date.now(),
       status: "live",
@@ -205,6 +208,7 @@ export class RoomStore {
       id: room.id,
       title: room.title,
       content: room.content,
+      contentVersion: room.contentVersion,
       contentType: room.contentType,
       status: room.status,
       ...(room.endedBy ? { endedBy: room.endedBy } : {}),
@@ -398,6 +402,21 @@ export class RoomStore {
       throw new RoomError("bad_agent_token", "a valid agent token is required");
     }
     return room;
+  }
+
+  replaceContent(
+    roomId: string,
+    token: string | undefined,
+    content: string,
+  ): { contentVersion: number; updated: boolean } {
+    const room = this.agent(roomId, token);
+    if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");
+    if (room.content === content) {
+      return { contentVersion: room.contentVersion, updated: false };
+    }
+    room.content = content;
+    room.contentVersion += 1;
+    return { contentVersion: room.contentVersion, updated: true };
   }
 
   // Delivery is at-least-once: a poll only reads the pending round, and

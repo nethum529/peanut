@@ -27,6 +27,7 @@ interface RoomStateView {
   id: string;
   title: string;
   content: string;
+  contentVersion: number;
   contentType: "markdown" | "html";
   status: string;
   endedBy?: string;
@@ -158,6 +159,9 @@ let currentState: RoomStateView | null = null;
 const remoteCursors = new Map<string, RemoteCursor>();
 let planFrame: HTMLIFrameElement | null = null;
 let overlayReady = false;
+let overlayHasDraft = false;
+let loadedContentVersion: number | null = null;
+let pendingContentVersion: number | null = null;
 let protocolWindow: Window | null = null;
 let toastRegion: HTMLElement | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -304,6 +308,18 @@ function showJoinDialog(roomId: string): void {
 
 function postToOverlay(message: ChromeToOverlayMessage): void {
   planFrame?.contentWindow?.postMessage(message, "*");
+}
+
+function reloadDocument(roomId: string, contentVersion: number, notify: boolean): void {
+  if (!planFrame) return;
+  for (const pending of pendingSnapshots.values()) pending("");
+  pendingSnapshots.clear();
+  loadedContentVersion = contentVersion;
+  pendingContentVersion = null;
+  overlayReady = false;
+  overlayHasDraft = false;
+  planFrame.src = `/api/rooms/${roomId}/document?v=${contentVersion}`;
+  if (notify) showToast("Document updated");
 }
 
 function postOverlayState(): void {
@@ -500,9 +516,20 @@ async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<voi
   if (!currentState) return;
   if (message.type === "ready") {
     overlayReady = true;
+    overlayHasDraft = false;
     postOverlayState();
     postRemoteCursors();
     postToOverlay({ type: "theme", theme: currentTheme() });
+    return;
+  }
+  if (message.type === "draft-state") {
+    overlayHasDraft = message.hasDraft;
+    return;
+  }
+  if (message.type === "reload-document") {
+    if (pendingContentVersion !== null) {
+      reloadDocument(currentState.id, pendingContentVersion, false);
+    }
     return;
   }
   if (message.type === "pin") {
@@ -558,15 +585,16 @@ function installChromeProtocol(): void {
   protocolWindow.addEventListener("message", handleOverlayMessage);
 }
 
-function ensurePlanFrame(roomId: string): HTMLIFrameElement {
+function ensurePlanFrame(roomId: string, contentVersion: number): HTMLIFrameElement {
   if (planFrame) return planFrame;
   // The injected overlay sends `ready` after it starts. The chrome never
   // reads contentDocument because the sandbox gives it an opaque origin.
   const frame = el("iframe", "plan-frame");
   frame.title = "Review document";
-  frame.src = `/api/rooms/${roomId}/document`;
+  frame.src = `/api/rooms/${roomId}/document?v=${contentVersion}`;
   frame.setAttribute("sandbox", "allow-scripts allow-forms allow-popups");
   planFrame = frame;
+  loadedContentVersion = contentVersion;
   overlayReady = false;
   return frame;
 }
@@ -615,7 +643,7 @@ function render(state: RoomStateView): void {
   } else {
     const body = el("div", "body");
     const left = el("div", "left");
-    left.append(ensurePlanFrame(state.id));
+    left.append(ensurePlanFrame(state.id, state.contentVersion));
     body.append(left, sidebar);
     root.replaceChildren(bar, ensureRoomBanner(), body);
   }
@@ -1007,6 +1035,16 @@ async function refresh(roomId: string): Promise<void> {
     return;
   }
   setConnectionLost(false);
+  const previousState = currentState;
+  if (loadedContentVersion !== null && state.contentVersion > loadedContentVersion) {
+    currentState = state;
+    if (overlayHasDraft) {
+      pendingContentVersion = state.contentVersion;
+      postToOverlay({ type: "new-version" });
+    } else {
+      reloadDocument(roomId, state.contentVersion, true);
+    }
+  }
   const serialized = JSON.stringify(state);
   if (serialized === lastRendered) return;
   // Never re-render over an inline sidebar edit; the textarea in
@@ -1017,10 +1055,10 @@ async function refresh(roomId: string): Promise<void> {
   const people = document.querySelector(".people");
   if (people && (people.matches(":hover") || people.contains(document.activeElement))) return;
   const guestPermissionChanged =
-    currentState !== null &&
+    previousState !== null &&
     !state.you.isHost &&
-    currentState.you.id === state.you.id &&
-    currentState.you.canSend !== state.you.canSend;
+    previousState.you.id === state.you.id &&
+    previousState.you.canSend !== state.you.canSend;
   lastRendered = serialized;
   render(state);
   if (guestPermissionChanged) {
@@ -1062,6 +1100,9 @@ export function resetView(): void {
   currentState = null;
   connectionLost = false;
   overlayReady = false;
+  overlayHasDraft = false;
+  loadedContentVersion = null;
+  pendingContentVersion = null;
   planFrame = null;
   for (const pending of pendingSnapshots.values()) pending("");
   pendingSnapshots.clear();

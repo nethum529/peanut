@@ -85,6 +85,7 @@ export function createOverlayRuntime(
     ended: false,
   };
   let cursors: OverlayCursor[] = [];
+  let draftActive = false;
   let hovered: HTMLElement | null = null;
   let markedStamps = new Map<HTMLElement, OverlayInstruction[]>();
   const cursorNodes = new Map<string, HTMLElement>();
@@ -97,7 +98,14 @@ export function createOverlayRuntime(
     if (expectedParentOrigin) host.postMessage(message, expectedParentOrigin);
   };
 
+  const setDraftActive = (active: boolean): void => {
+    if (draftActive === active) return;
+    draftActive = active;
+    send({ type: "draft-state", hasDraft: active });
+  };
+
   const closeFloating = (): void => {
+    if (root.querySelector(".composer.peanut-overlay")) setDraftActive(false);
     root.querySelectorAll(".composer.peanut-overlay, .card.peanut-overlay").forEach((node) =>
       node.remove(),
     );
@@ -310,6 +318,7 @@ export function createOverlayRuntime(
       const words = input.value.trim();
       if (!words) return;
       send({ type: "pin", words, anchor });
+      setDraftActive(false);
       composer.remove();
       view.getSelection()?.removeAllRanges();
     };
@@ -319,8 +328,27 @@ export function createOverlayRuntime(
     };
     input.onkeydown = (event) => {
       if (event.key === "Enter") submit();
-      if (event.key === "Escape") composer.remove();
+      if (event.key === "Escape") {
+        setDraftActive(false);
+        composer.remove();
+      }
     };
+    input.oninput = () => setDraftActive(input.value.length > 0);
+  };
+
+  const showNewVersionBanner = (): void => {
+    const composer = root.querySelector<HTMLElement>(".composer.peanut-overlay");
+    if (!composer || !draftActive || composer.querySelector(".new-version-banner")) return;
+    const banner = element(document, "div", "new-version-banner");
+    banner.append(document.createTextNode("New version. "));
+    const reload = element(document, "button", undefined, "Reload");
+    reload.type = "button";
+    reload.onclick = (event) => {
+      event.stopPropagation();
+      send({ type: "reload-document" });
+    };
+    banner.append(reload);
+    composer.prepend(banner);
   };
 
   const onMouseOver = (event: MouseEvent): void => {
@@ -387,6 +415,8 @@ export function createOverlayRuntime(
       renderCursors();
     } else if (message.type === "theme") {
       document.documentElement.dataset.theme = message.theme;
+    } else if (message.type === "new-version") {
+      showNewVersionBanner();
     } else {
       send({ type: "snapshot", requestId: message.requestId, html: snapshotHtml() });
     }

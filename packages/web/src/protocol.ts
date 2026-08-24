@@ -34,6 +34,7 @@ export type ChromeToOverlayMessage =
     }
   | { type: "cursors"; cursors: OverlayCursor[] }
   | { type: "theme"; theme: "dark" | "light" }
+  | { type: "new-version" }
   | { type: "snapshot-request"; requestId: string };
 
 export type OverlayToChromeMessage =
@@ -43,6 +44,8 @@ export type OverlayToChromeMessage =
   | { type: "hover"; selector: string | null }
   | { type: "cursor"; x: number; y: number }
   | { type: "cursor-leave" }
+  | { type: "draft-state"; hasDraft: boolean }
+  | { type: "reload-document" }
   | { type: "snapshot"; requestId: string; html: string };
 
 type UnknownRecord = Record<string, unknown>;
@@ -127,12 +130,15 @@ export function isChromeToOverlayMessage(value: unknown): value is ChromeToOverl
     );
   }
   if (value.type === "theme") return value.theme === "dark" || value.theme === "light";
+  if (value.type === "new-version") return true;
   return value.type === "snapshot-request" && typeof value.requestId === "string";
 }
 
 export function isOverlayToChromeMessage(value: unknown): value is OverlayToChromeMessage {
   if (!record(value) || typeof value.type !== "string") return false;
-  if (value.type === "ready" || value.type === "cursor-leave") return true;
+  if (value.type === "ready" || value.type === "cursor-leave" || value.type === "reload-document") {
+    return true;
+  }
   if (value.type === "pin") {
     return (
       typeof value.words === "string" &&
@@ -147,6 +153,7 @@ export function isOverlayToChromeMessage(value: unknown): value is OverlayToChro
     return value.selector === null || typeof value.selector === "string";
   }
   if (value.type === "cursor") return finiteUnit(value.x) && finiteUnit(value.y);
+  if (value.type === "draft-state") return typeof value.hasDraft === "boolean";
   return (
     value.type === "snapshot" &&
     typeof value.requestId === "string" &&

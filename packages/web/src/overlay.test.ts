@@ -141,6 +141,23 @@ describe("document overlay", () => {
     win.HTMLElement.prototype.getBoundingClientRect = originalRect;
   });
 
+  test("reports a typed draft and offers reload when a new version arrives", () => {
+    receive(state());
+    document.querySelector("p")!.dispatchEvent(
+      new win.MouseEvent("click", { bubbles: true, cancelable: true }) as unknown as Event,
+    );
+    const input = document.querySelector(".composer input") as HTMLInputElement;
+    input.value = "Keep this draft";
+    input.dispatchEvent(new win.Event("input", { bubbles: true }) as unknown as Event);
+    expect(sent.at(-1)?.message).toEqual({ type: "draft-state", hasDraft: true });
+
+    receive({ type: "new-version" });
+    const banner = document.querySelector(".new-version-banner") as HTMLElement;
+    expect(banner.textContent).toBe("New version. Reload");
+    (banner.querySelector("button") as HTMLButtonElement).click();
+    expect(sent.at(-1)?.message).toEqual({ type: "reload-document" });
+  });
+
   test("restores stamp and range anchors, then relays an allowed unpin", () => {
     receive(
       state([

@@ -56,6 +56,9 @@ instruction to the file. Then answer, again in the background:
 peanut reply "<one short summary of what you changed>" --meta "<test or check results, optional>"
 ```
 
+Save the file before replying. The reply sends the file's current
+content to the room.
+
 The reply command returns the next round. Repeat this step until
 the review ends.
 
