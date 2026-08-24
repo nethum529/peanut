@@ -512,8 +512,8 @@ async function postJson(path: string, payload: unknown): Promise<Response> {
 // The Lucide pencil and trash-2 icons, verbatim (lucide.dev, ISC license).
 const PENCIL_ICON = `<svg
   xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
+  width="16"
+  height="16"
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
@@ -527,8 +527,8 @@ const PENCIL_ICON = `<svg
 
 const TRASH_ICON = `<svg
   xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
+  width="16"
+  height="16"
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
@@ -600,7 +600,6 @@ function renderConversation(state: RoomStateView): HTMLElement {
     const bubble = userBubble(instruction.words, instruction.author, instruction.mine);
     bubble.classList.add("queued");
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
-      bubble.tabIndex = 0;
       const footer = el("div", "bubble-footer");
       const actions = el("div", "bubble-actions");
       const edit = iconButton("Edit", PENCIL_ICON, "bubble-action");

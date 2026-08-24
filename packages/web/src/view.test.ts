@@ -191,7 +191,7 @@ describe("chat sidebar", () => {
     expect(view.rounds[0].instructions[1].anchor.guard).toBe("first paragraph");
   });
 
-  test("queued icon buttons use the shared tooltip class and accessible labels", async () => {
+  test("queued icon buttons stay crisp in the bottom-right footer", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     click(doc.querySelector("#plan p")!);
     const input = doc.querySelector(".composer input") as HTMLInputElement;
@@ -202,25 +202,50 @@ describe("chat sidebar", () => {
     const edit = doc.querySelector('.bubble-action[aria-label="Edit"]');
     const remove = doc.querySelector('.bubble-action[aria-label="Delete"]');
     const footer = edit?.closest(".bubble-footer");
-    expect(edit?.closest(".bubble")?.getAttribute("tabindex")).toBe("0");
+    expect(edit?.closest(".bubble")?.getAttribute("tabindex")).toBeNull();
     expect(footer?.querySelector(".hint")).toBeNull();
     expect(footer?.querySelector(".bubble-actions")).not.toBeNull();
+    expect(footer?.lastElementChild?.classList.contains("bubble-actions")).toBe(true);
     expect(edit?.getAttribute("title")).toBeNull();
     expect(remove?.getAttribute("title")).toBeNull();
     for (const button of [edit, remove]) {
       expect(button?.classList.contains("icon-tooltip")).toBe(true);
       const svg = button?.querySelector("svg");
+      expect(svg?.getAttribute("width")).toBe("16");
+      expect(svg?.getAttribute("height")).toBe("16");
       expect(svg?.getAttribute("stroke")).toBe("currentColor");
+      expect(svg?.getAttribute("stroke-width")).toBe("2");
       expect(svg?.getAttribute("aria-hidden")).toBe("true");
+      expect(svg?.getAttribute("opacity")).toBeNull();
+      expect(svg?.getAttribute("filter")).toBeNull();
+      expect(svg?.getAttribute("transform")).toBeNull();
     }
   });
 
-  test("icon tooltip styles are shared instead of tied to bubble actions", async () => {
+  test("bubble actions are always visible, unboxed, and do not transform the icons", async () => {
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const actionsRule = html.match(/\.bubble-actions \{([^}]*)\}/)?.[1] ?? "";
+    const actionRule = html.match(/\.bubble-action \{([^}]*)\}/)?.[1] ?? "";
+    const svgRule = html.match(/\.bubble-action svg \{([^}]*)\}/)?.[1] ?? "";
+    const queuedRule = html.match(/\.bubble\.queued \{([^}]*)\}/)?.[1] ?? "";
+
     expect(html).toContain(".icon-tooltip::before, .icon-tooltip::after");
     expect(html).not.toContain(".bubble-action::before");
-    expect(html).toContain("@media (hover: none)");
-    expect(html).not.toContain("min-height: 24px");
+    expect(html).not.toContain(".bubble:focus-within .bubble-actions");
+    expect(html).not.toContain(".bubble:hover .bubble-actions");
+    expect(html).not.toContain("@media (hover: none)");
+    expect(actionsRule).toContain("margin-left: auto");
+    expect(actionsRule).not.toContain("opacity");
+    expect(actionsRule).not.toContain("pointer-events");
+    expect(actionRule).toContain("border: 0");
+    expect(actionRule).toContain("background: transparent");
+    expect(actionRule).not.toContain("transform");
+    expect(svgRule).toContain("width: 16px");
+    expect(svgRule).toContain("height: 16px");
+    expect(svgRule).not.toContain("opacity");
+    expect(svgRule).not.toContain("filter");
+    expect(svgRule).not.toContain("transform");
+    expect(queuedRule).not.toContain("opacity");
   });
 
   test("Enter saves an inline edit and updates the queued bubble", async () => {
