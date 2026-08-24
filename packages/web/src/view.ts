@@ -214,6 +214,51 @@ async function postJson(path: string, payload: unknown): Promise<Response> {
   return fetch(path, { method: "POST", body: JSON.stringify(payload) });
 }
 
+// The Lucide pencil and trash-2 icons, verbatim (lucide.dev, ISC license).
+const PENCIL_ICON = `<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+  <path d="m15 5 4 4" />
+</svg>`;
+
+const TRASH_ICON = `<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10 11v6" />
+  <path d="M14 11v6" />
+  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+  <path d="M3 6h18" />
+  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+</svg>`;
+
+function iconButton(label: string, icon: string): HTMLButtonElement {
+  const button = el("button", "bubble-action");
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  button.innerHTML = icon;
+  const svg = button.querySelector("svg")!;
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  return button;
+}
+
 // The short line under a bubble that says where the message points.
 function anchorHint(anchor: InstructionView["anchor"], lost: boolean): string {
   if (lost) return "anchor lost";
@@ -281,14 +326,79 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
       anchorHint(instruction.anchor, lostIds.has(instruction.id)),
     );
     bubble.classList.add("queued");
-    if ((instruction.mine || state.you.isHost) && !ended) {
-      const remove = el("button", "unpin", "x");
-      remove.title = "Remove";
+    if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
+      bubble.classList.add("actionable");
+      const actions = el("div", "bubble-actions");
+      const edit = iconButton("Edit", PENCIL_ICON);
+      const remove = iconButton("Delete", TRASH_ICON);
+      edit.onclick = () => {
+        const shownWords = bubble.querySelector(".words");
+        if (!shownWords) return;
+        const editor = el("div", "inline-editor");
+        const input = el("textarea", "inline-edit");
+        const error = el("span", "inline-edit-error");
+        error.id = `inline-edit-error-${instruction.id}`;
+        error.setAttribute("role", "status");
+        input.value = instruction.words;
+        input.maxLength = 2000;
+        input.setAttribute("aria-label", "Edit queued message");
+        input.setAttribute("aria-describedby", error.id);
+        editor.append(input, error);
+        shownWords.replaceWith(editor);
+        bubble.classList.add("editing");
+        input.focus();
+        input.select();
+
+        input.oninput = () => {
+          input.removeAttribute("aria-invalid");
+          error.textContent = "";
+        };
+
+        input.onkeydown = async (key) => {
+          if (key.key === "Escape") {
+            key.preventDefault();
+            editor.replaceWith(shownWords);
+            bubble.classList.remove("editing");
+            edit.focus();
+            return;
+          }
+          if (key.key !== "Enter" || key.shiftKey) return;
+          key.preventDefault();
+          const words = input.value.trim();
+          if (!words) {
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = "Message cannot be empty.";
+            return;
+          }
+          let response: Response;
+          try {
+            response = await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ words }),
+            });
+          } catch {
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = "Could not save changes.";
+            return;
+          }
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            input.setAttribute("aria-invalid", "true");
+            error.textContent = body.message ?? "Could not save changes.";
+            return;
+          }
+          shownWords.textContent = words;
+          editor.replaceWith(shownWords);
+          bubble.classList.remove("editing");
+          refresh(state.id);
+        };
+      };
       remove.onclick = async () => {
         await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
         refresh(state.id);
       };
-      bubble.append(remove);
+      actions.append(edit, remove);
+      bubble.append(actions);
     }
     log.append(bubble);
   }
@@ -511,7 +621,10 @@ function instructionRow(state: RoomStateView, instruction: InstructionView): HTM
   const author = el("span", "author", instruction.author.name);
   author.style.color = instruction.author.color;
   row.append(author, el("span", "words", instruction.words));
-  if ((instruction.mine || state.you.isHost) && state.status !== "ended") {
+  if (
+    (instruction.mine || state.you.isHost || state.you.canSend) &&
+    state.status !== "ended"
+  ) {
     const remove = el("button", "remove", "Remove");
     remove.onclick = async () => {
       await fetch(`/api/rooms/${state.id}/instructions/${instruction.id}`, { method: "DELETE" });
@@ -657,8 +770,9 @@ async function refresh(roomId: string): Promise<void> {
   const state = (await response.json()) as RoomStateView;
   const serialized = JSON.stringify(state);
   if (serialized === lastRendered) return;
-  // Never re-render over an open composer; the pin in progress wins.
-  if (document.querySelector(".composer")) return;
+  // Never re-render over an open composer or inline edit; the textarea
+  // in progress wins.
+  if (document.querySelector(".composer, .inline-edit")) return;
   lastRendered = serialized;
   render(state);
 }

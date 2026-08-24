@@ -104,7 +104,7 @@
         overflow-y: auto;
         flex: 1;
         min-height: 120px;
-        padding: 2px;
+        padding: 30px 2px 2px;
       }
       .bubble {
         max-width: 85%;
@@ -141,20 +141,111 @@
       .bubble.working { color: var(--muted); }
       .bubble.queued { opacity: 0.75; border-style: dashed; }
       .bubble.queued.mine { border-style: solid; }
-      .bubble .unpin {
+      .bubble.actionable { padding-top: 34px; }
+      .bubble.actionable.editing { padding-top: 8px; }
+      .bubble-actions {
         position: absolute;
-        top: -7px;
-        left: -7px;
-        width: 18px;
-        height: 18px;
-        border-radius: 999px;
+        top: 4px;
+        right: 4px;
+        display: flex;
+        gap: 4px;
+      }
+      .bubble.editing .bubble-actions { display: none; }
+      .bubble-action {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
         border: 1px solid var(--line);
         background: #fff;
         color: var(--muted);
-        font-size: 11px;
-        line-height: 1;
         cursor: pointer;
         padding: 0;
+        touch-action: manipulation;
+      }
+      .bubble-action:hover { color: var(--ink); }
+      .bubble-action:focus-visible { outline-offset: 2px; }
+      .bubble-action svg { width: 14px; height: 14px; }
+      .bubble-action::before, .bubble-action::after {
+        position: absolute;
+        left: 50%;
+        z-index: 2;
+        background: #171717;
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+      }
+      .bubble-action::before {
+        content: "";
+        bottom: calc(100% + 3px);
+        width: 6px;
+        height: 6px;
+        transform: translateX(-50%) rotate(45deg) scale(0.95);
+      }
+      .bubble-action::after {
+        content: attr(aria-label);
+        bottom: calc(100% + 6px);
+        padding: 5px 7px;
+        border-radius: 4px;
+        color: #fafafa;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        transform: translate(-50%, 2px) scale(0.95);
+        transform-origin: bottom center;
+      }
+      .bubble-action:hover::before, .bubble-action:hover::after,
+      .bubble-action:focus-visible::before, .bubble-action:focus-visible::after {
+        opacity: 1;
+        visibility: visible;
+      }
+      .bubble-action:hover::before,
+      .bubble-action:focus-visible::before {
+        transform: translateX(-50%) rotate(45deg) scale(1);
+      }
+      .bubble-action:hover::after,
+      .bubble-action:focus-visible::after {
+        transform: translate(-50%, 0) scale(1);
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .bubble-action::before, .bubble-action::after {
+          transition-property: opacity, transform, visibility;
+          transition-duration: 100ms, 100ms, 0ms;
+          transition-timing-function: ease-out;
+          transition-delay: 0ms, 0ms, 100ms;
+        }
+        .bubble-action:hover::before, .bubble-action:hover::after,
+        .bubble-action:focus-visible::before, .bubble-action:focus-visible::after {
+          transition-delay: 300ms;
+        }
+      }
+      .inline-editor {
+        width: 100%;
+        min-width: 160px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .inline-edit {
+        width: 100%;
+        min-height: 68px;
+        resize: vertical;
+        padding: 5px 7px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--ink);
+        font: inherit;
+        line-height: inherit;
+      }
+      .inline-edit-error {
+        min-height: 1em;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.3;
       }
       .chip {
         align-self: center;
