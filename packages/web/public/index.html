@@ -29,15 +29,51 @@
       }
       .wordmark { font-weight: 700; color: var(--accent); }
       .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .people { display: flex; gap: 6px; }
-      .person {
-        border: 2px solid var(--muted);
-        border-radius: 999px;
-        padding: 2px 10px;
-        font-size: 13px;
-        background: #fff;
+      .people { position: relative; display: flex; }
+      .people-icon { display: grid; place-items: center; padding: 4px; color: var(--muted); }
+      .people-icon svg { width: 20px; height: 20px; }
+      .people:hover .people-icon { color: var(--accent); }
+      /* Hover intent without scripts: the fade is an opacity
+         transition, the exit timer is its delay, and visibility flips
+         after the fade so a hidden menu takes no hover. The top
+         padding is a transparent bridge that keeps the hover alive
+         between the icon and the panel. */
+      .people-menu {
+        position: absolute;
+        top: 100%;
+        right: -8px;
+        padding-top: 10px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
+        z-index: 20;
       }
-      .person.you { font-weight: 600; }
+      .people:hover .people-menu, .people-menu:hover {
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 160ms ease;
+      }
+      .people-panel {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: 0 4px 14px rgba(43, 46, 58, 0.12);
+        padding: 8px;
+        min-width: 170px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .person-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 14px; white-space: nowrap; }
+      .person-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+      .person-name { margin-right: auto; }
+      .person-tag {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 1px 6px;
+      }
       .body {
         display: grid;
         grid-template-columns: 1fr 320px;
