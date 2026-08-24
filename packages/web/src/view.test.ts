@@ -206,12 +206,47 @@ describe("chat sidebar", () => {
 
   test("send controls omit the verdict select and its styles", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
-    expect(doc.querySelector(".send-button")?.textContent).toBe("Send to agent");
+    const send = doc.querySelector(".send-button");
+    const end = doc.querySelector(".end-button");
+    const stack = doc.querySelector(".sidebar-button-stack");
+    expect(send?.textContent).toBe("Send to agent");
     expect(doc.querySelector(".send select")).toBeNull();
-    expect(doc.querySelector(".end-button")?.textContent).toBe("End session");
+    expect(end?.textContent).toBe("End session");
+    expect(stack?.children[0] ?? null).toBe(send);
+    expect(stack?.children[1] ?? null).toBe(end);
+    expect(stack?.nextElementSibling?.classList.contains("note")).toBe(true);
 
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     expect(html).not.toContain(".send select");
+  });
+
+  test("sidebar composer and action controls share dimensions and alignment", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const insetRule =
+      html.match(/\.message-composer,\s*\.sidebar-button-stack \{([^}]*)\}/)?.[1] ?? "";
+    const composerRule = html.match(/\.message-composer \{([^}]*)\}/)?.[1] ?? "";
+    const composerControlsRule =
+      html.match(/\.message-composer textarea,\s*\.queue-button \{([^}]*)\}/)?.[1] ?? "";
+    const actionStackRule =
+      [...html.matchAll(/\.sidebar-button-stack \{([^}]*)\}/g)]
+        .map((match) => match[1] ?? "")
+        .find((rule) => rule.includes("display: grid")) ?? "";
+    const actionButtonsRule =
+      html.match(/\.send-button,\s*\.end-button \{([^}]*)\}/)?.[1] ?? "";
+    const endRule = html.match(/\.end-button \{([^}]*)\}/)?.[1] ?? "";
+
+    expect(insetRule).toContain("padding-inline: 2px");
+    expect(composerRule).toContain("align-items: stretch");
+    expect(composerControlsRule).toContain("height: 40px");
+    expect(composerControlsRule).toContain("min-height: 40px");
+    expect(composerControlsRule).toContain("border-radius: 10px");
+    expect(actionStackRule).toContain("gap: 8px");
+    expect(actionButtonsRule).toContain("width: 100%");
+    expect(actionButtonsRule).toContain("height: 40px");
+    expect(actionButtonsRule).toContain("min-height: 40px");
+    expect(actionButtonsRule).toContain("border-radius: 10px");
+    expect(endRule).not.toContain("margin-top");
   });
 
   test("host sidebar omits guest permissions and keeps End session", async () => {
