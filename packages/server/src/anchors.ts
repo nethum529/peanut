@@ -25,11 +25,18 @@ export interface PointAnchor {
   y: number;
 }
 
-export type Anchor = StampAnchor | RangeAnchor | PointAnchor;
+// A chat message points at nothing; it lives only in the sidebar
+// conversation and flushes with the round like any instruction.
+export interface ChatAnchor {
+  type: "chat";
+}
+
+export type Anchor = StampAnchor | RangeAnchor | PointAnchor | ChatAnchor;
 
 export function parseAnchor(raw: unknown): Anchor | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
+  if (value.type === "chat") return { type: "chat" };
   const selector = typeof value.selector === "string" ? value.selector.trim() : "";
   if (!selector || selector.length > 1000) return null;
 

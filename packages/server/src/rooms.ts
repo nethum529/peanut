@@ -104,7 +104,8 @@ export class RoomError extends Error {
       | "empty_flush"
       | "room_ended"
       | "round_pending"
-      | "bad_ack",
+      | "bad_ack"
+      | "reply_too_long",
     message: string,
   ) {
     super(message);
@@ -406,6 +407,12 @@ export class RoomStore {
     const room = this.agent(roomId, token);
     const trimmed = message.trim();
     if (!trimmed) throw new RoomError("bad_instruction", "a reply message is required");
+    // The reply is a chat bubble, not a report. The cap keeps it
+    // readable in the sidebar conversation.
+    const wordCount = trimmed.split(/\s+/).length;
+    if (wordCount > 100) {
+      throw new RoomError("reply_too_long", `the reply has ${wordCount} words; the cap is 100`);
+    }
     const round =
       roundNumber === undefined
         ? room.rounds[room.rounds.length - 1]

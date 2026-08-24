@@ -296,7 +296,13 @@ async function reply(flags: Flags): Promise<never> {
     ...(meta ? { meta } : {}),
     ...(session.lastRound > 0 ? { round: session.lastRound } : {}),
   });
-  if (!response.ok) fail(`The reply was refused (${response.status}).`);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+    if (body.error === "reply_too_long") {
+      fail(`The reply was refused: ${body.message}. Send a shorter reply, under 100 words.`);
+    }
+    fail(`The reply was refused (${response.status}).`);
+  }
   console.log("Reply sent. Waiting for the next round...");
   return waitAndPrint(flags, session);
 }

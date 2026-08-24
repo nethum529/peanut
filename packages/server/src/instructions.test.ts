@@ -95,6 +95,14 @@ describe("pinning", () => {
     expect((await pin(roomId, hostCookie, "ok", notAString)).response.status).toBe(400);
   });
 
+  test("a chat anchor pins without a selector and round-trips", async () => {
+    const { roomId, guestCookie, hostCookie } = await setup();
+    const { response } = await pin(roomId, guestCookie, "Can you also cover timeouts?", { type: "chat" });
+    expect(response.status).toBe(201);
+    const view = await state(roomId, hostCookie);
+    expect(view.instructions[0].anchor).toEqual({ type: "chat" });
+  });
+
   test("empty words or a broken anchor are refused", async () => {
     const { roomId, hostCookie } = await setup();
     expect((await pin(roomId, hostCookie, "   ")).response.status).toBe(400);
