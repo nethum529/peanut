@@ -250,6 +250,9 @@
         touch-action: manipulation;
       }
       .bubble-action:hover, .bubble-action:focus-visible { color: var(--accent); }
+      .bubble.user.mine .bubble-action { color: var(--on-accent); opacity: 0.8; }
+      .bubble.user.mine .bubble-action:hover,
+      .bubble.user.mine .bubble-action:focus-visible { opacity: 1; }
       .bubble-action:focus-visible { outline-offset: 2px; }
       .bubble-action svg { width: 16px; height: 16px; }
       .icon-tooltip { position: relative; }

@@ -252,6 +252,11 @@ describe("chat sidebar", () => {
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const actionsRule = html.match(/\.bubble-actions \{([^}]*)\}/)?.[1] ?? "";
     const actionRule = html.match(/\.bubble-action \{([^}]*)\}/)?.[1] ?? "";
+    const mineActionRule = html.match(/\.bubble\.user\.mine \.bubble-action \{([^}]*)\}/)?.[1] ?? "";
+    const mineActionActiveRule =
+      html.match(
+        /\.bubble\.user\.mine \.bubble-action:hover,\s*\.bubble\.user\.mine \.bubble-action:focus-visible \{([^}]*)\}/,
+      )?.[1] ?? "";
     const svgRule = html.match(/\.bubble-action svg \{([^}]*)\}/)?.[1] ?? "";
     const queuedRule = html.match(/\.bubble\.queued \{([^}]*)\}/)?.[1] ?? "";
 
@@ -266,6 +271,8 @@ describe("chat sidebar", () => {
     expect(actionRule).toContain("border: 0");
     expect(actionRule).toContain("background: transparent");
     expect(actionRule).not.toContain("transform");
+    expect(mineActionRule).toContain("color: var(--on-accent); opacity: 0.8");
+    expect(mineActionActiveRule).toContain("opacity: 1");
     expect(svgRule).toContain("width: 16px");
     expect(svgRule).toContain("height: 16px");
     expect(svgRule).not.toContain("opacity");
