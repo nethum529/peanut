@@ -400,14 +400,77 @@
         cursor: pointer;
         margin-top: auto;
       }
-      .plan {
+      .plan-shell {
         max-width: 760px;
         margin: 28px auto;
+        position: relative;
+      }
+      .plan {
+        width: 100%;
+        margin: 0;
         padding: 32px 40px;
         background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 8px;
         line-height: 1.6;
+      }
+      .cursor-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 8;
+        pointer-events: none;
+      }
+      .live-cursor {
+        --cursor-color: var(--accent);
+        position: absolute;
+        width: 0;
+        height: 0;
+        opacity: 1;
+        color: var(--cursor-color);
+        filter: drop-shadow(0 1px 1px rgba(43, 46, 58, 0.22));
+      }
+      .live-cursor.stale { opacity: 0; }
+      .live-cursor svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 20px;
+        height: 24px;
+        fill: currentColor;
+        stroke: #fff;
+        stroke-width: 1.5px;
+        stroke-linejoin: round;
+      }
+      .cursor-name {
+        position: absolute;
+        top: 14px;
+        left: 16px;
+        display: block;
+        width: max-content;
+        max-width: 140px;
+        padding: 2px 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--cursor-color);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 18px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .live-cursor.right-edge .cursor-name {
+        right: 0;
+        left: auto;
+      }
+      .live-cursor.bottom-edge .cursor-name {
+        top: auto;
+        bottom: 0;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .live-cursor {
+          transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+        }
       }
       .plan pre {
         background: var(--paper);
