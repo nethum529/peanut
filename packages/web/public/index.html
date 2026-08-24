@@ -113,6 +113,13 @@
       }
       .people-icon svg { width: 20px; height: 20px; }
       .people:hover .people-icon { color: var(--accent-text); }
+      .people:hover .people-icon::before,
+      .people:hover .people-icon::after,
+      .people:focus-within .people-icon::before,
+      .people:focus-within .people-icon::after {
+        opacity: 0;
+        visibility: hidden;
+      }
       .theme-toggle {
         width: 32px;
         height: 32px;
@@ -132,18 +139,20 @@
          transition, the exit timer is its delay, and visibility flips
          after the fade so a hidden menu takes no hover. The top
          padding is a transparent bridge that keeps the hover alive
-         between the icon and the panel, with room for the tooltip. */
+         between the icon and the panel. */
       .people-menu {
         position: absolute;
         top: 100%;
         right: -8px;
-        padding-top: 36px;
+        padding-top: 8px;
         opacity: 0;
         visibility: hidden;
         transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
         z-index: 20;
       }
-      .people:hover .people-menu, .people-menu:hover {
+      .people:hover .people-menu,
+      .people:focus-within .people-menu,
+      .people-menu:hover {
         opacity: 1;
         visibility: visible;
         transition: opacity 160ms ease;
@@ -162,6 +171,36 @@
       .person-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 14px; white-space: nowrap; }
       .person-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
       .person-name { margin-right: auto; }
+      .permission-switch {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        width: 32px;
+        height: 18px;
+        flex: 0 0 auto;
+        padding: 2px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--line);
+        cursor: pointer;
+      }
+      .permission-switch[aria-checked="true"] { background: var(--accent); }
+      .permission-switch:focus-visible {
+        outline: 2px solid var(--accent-border);
+        outline-offset: 2px;
+      }
+      .permission-switch-thumb {
+        display: block;
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: var(--on-accent);
+        box-shadow: 0 1px 2px var(--shadow);
+        transform: translateX(0);
+      }
+      .permission-switch[aria-checked="true"] .permission-switch-thumb {
+        transform: translateX(14px);
+      }
       .body {
         display: grid;
         grid-template-columns: 1fr 320px;
@@ -347,6 +386,9 @@
         .icon-tooltip:hover::before, .icon-tooltip:hover::after,
         .icon-tooltip:focus-visible::before, .icon-tooltip:focus-visible::after {
           transition-delay: 300ms;
+        }
+        .permission-switch-thumb {
+          transition: transform 150ms cubic-bezier(0.77, 0, 0.175, 1);
         }
       }
       .inline-editor {

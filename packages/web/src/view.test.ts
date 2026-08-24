@@ -144,6 +144,16 @@ function pressEscape(target: Element): void {
   );
 }
 
+function pressSpace(target: Element): boolean {
+  const event = new win.KeyboardEvent("keydown", {
+    key: " ",
+    bubbles: true,
+    cancelable: true,
+  }) as unknown as Event;
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 beforeEach(() => {
   server = startServer();
 });
@@ -468,6 +478,91 @@ describe("chat sidebar", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.querySelector(".person-name")?.textContent).toBe("Nethum");
     expect(rows[0]?.querySelector(".person-tag")).toBeNull();
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    expect(html).toContain("padding-top: 8px");
+    expect(html).toContain(".people:hover .people-icon::before");
+    expect(html).toContain(".people:focus-within .people-menu");
+  });
+
+  test("a host grants and revokes guest send permission from the people menu", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+
+    const rows = [...doc.querySelectorAll(".person-row")];
+    const hostRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Nethum");
+    const guestRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Sam");
+    expect(hostRow?.querySelector(".permission-switch")).toBeNull();
+    let permission = guestRow?.querySelector(".permission-switch") as HTMLButtonElement;
+    expect(permission?.getAttribute("role")).toBe("switch");
+    expect(permission?.getAttribute("aria-label")).toBe("Allow Sam to send");
+    expect(permission?.getAttribute("aria-checked")).toBe("false");
+    expect(permission?.querySelector(".permission-switch-thumb")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+
+    click(permission);
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+    await Bun.sleep(150);
+
+    let response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    let state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(true);
+    permission = doc.querySelector('.permission-switch[aria-label="Allow Sam to send"]')!;
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+
+    expect(pressSpace(permission)).toBe(true);
+    await Bun.sleep(150);
+    response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(false);
+  });
+
+  test("a failed send permission change restores the switch", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+    const permission = doc.querySelector(".permission-switch") as HTMLButtonElement;
+
+    cookie = guest.cookie;
+    click(permission);
+    expect(permission.getAttribute("aria-checked")).toBe("true");
+    await Bun.sleep(150);
+
+    expect(permission.getAttribute("aria-checked")).toBe("false");
+    const response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie: hostCookie },
+    });
+    const state = await response.json();
+    expect(
+      state.participants.find(
+        (participant: { id: string }) => participant.id === guest.participant.id,
+      )?.canSend,
+    ).toBe(false);
+  });
+
+  test("a guest sees no send permission switches", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, guest.cookie);
+
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(2);
+    expect(doc.querySelector(".permission-switch")).toBeNull();
   });
 
   test("theme starts dark and the sun toggle saves a light choice", async () => {

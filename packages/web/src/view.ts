@@ -446,6 +446,9 @@ function render(state: RoomStateView): void {
     const dot = el("span", "person-dot");
     setAuthorColor(dot, participant.color, "author-dot");
     row.append(dot, el("span", "person-name", participant.name));
+    if (state.you.isHost && !participant.isHost) {
+      row.append(renderSendPermissionSwitch(state, participant));
+    }
     panel.append(row);
   }
   menu.append(panel);
@@ -527,6 +530,50 @@ function iconButton(label: string, icon: string, className: string): HTMLButtonE
   const svg = button.querySelector("svg")!;
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
+  return button;
+}
+
+function renderSendPermissionSwitch(
+  state: RoomStateView,
+  participant: ParticipantView,
+): HTMLButtonElement {
+  const button = el("button", "permission-switch");
+  const thumb = el("span", "permission-switch-thumb");
+  let pending = false;
+  button.type = "button";
+  button.setAttribute("role", "switch");
+  button.setAttribute("aria-label", `Allow ${participant.name} to send`);
+  button.setAttribute("aria-checked", String(participant.canSend));
+  thumb.setAttribute("aria-hidden", "true");
+  button.append(thumb);
+
+  button.onclick = async () => {
+    if (pending) return;
+    pending = true;
+    const previous = button.getAttribute("aria-checked") === "true";
+    const canSend = !previous;
+    button.setAttribute("aria-checked", String(canSend));
+    try {
+      const response = await postJson(`/api/rooms/${state.id}/grants`, {
+        participantId: participant.id,
+        canSend,
+      });
+      if (!response.ok) {
+        button.setAttribute("aria-checked", String(previous));
+        return;
+      }
+      await refresh(state.id);
+    } catch {
+      button.setAttribute("aria-checked", String(previous));
+    } finally {
+      pending = false;
+    }
+  };
+  button.onkeydown = (event) => {
+    if (event.key !== " ") return;
+    event.preventDefault();
+    button.click();
+  };
   return button;
 }
 
