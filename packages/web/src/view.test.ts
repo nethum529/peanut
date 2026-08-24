@@ -146,7 +146,7 @@ describe("chat sidebar", () => {
     expect(view.rounds[0].instructions[0].words).toBe("Also cover timeouts.");
   });
 
-  test("queued messages use labeled Lucide edit and delete buttons", async () => {
+  test("queued icon buttons use the shared tooltip class and accessible labels", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const input = doc.querySelector(".message-composer textarea") as HTMLTextAreaElement;
     input.value = "Review this one.";
@@ -158,10 +158,17 @@ describe("chat sidebar", () => {
     expect(edit?.getAttribute("title")).toBeNull();
     expect(remove?.getAttribute("title")).toBeNull();
     for (const button of [edit, remove]) {
+      expect(button?.classList.contains("icon-tooltip")).toBe(true);
       const svg = button?.querySelector("svg");
       expect(svg?.getAttribute("stroke")).toBe("currentColor");
       expect(svg?.getAttribute("aria-hidden")).toBe("true");
     }
+  });
+
+  test("icon tooltip styles are shared instead of tied to bubble actions", async () => {
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    expect(html).toContain(".icon-tooltip::before, .icon-tooltip::after");
+    expect(html).not.toContain(".bubble-action::before");
   });
 
   test("Enter saves an inline edit and updates the queued bubble", async () => {
@@ -372,7 +379,13 @@ describe("chat sidebar", () => {
 
   test("participants sit behind the users icon in a dropdown panel", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
-    expect(doc.querySelector(".people-icon svg")).not.toBeNull();
+    const icon = doc.querySelector(".people-icon");
+    expect(icon?.tagName).toBe("BUTTON");
+    expect(icon?.classList.contains("icon-tooltip")).toBe(true);
+    expect(icon?.classList.contains("icon-tooltip-below")).toBe(true);
+    expect(icon?.getAttribute("aria-label")).toBe("Participants");
+    expect(icon?.getAttribute("title")).toBeNull();
+    expect(icon?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     const rows = [...doc.querySelectorAll(".person-row")];
     expect(rows).toHaveLength(1);
     expect(rows[0]?.textContent).toContain("Nethum");

@@ -98,7 +98,15 @@
       .wordmark { font-weight: 700; color: var(--accent); }
       .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .people { position: relative; display: flex; }
-      .people-icon { display: grid; place-items: center; padding: 4px; color: var(--muted); }
+      .people-icon {
+        display: grid;
+        place-items: center;
+        padding: 4px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
       .people-icon svg { width: 20px; height: 20px; }
       .people:hover .people-icon { color: var(--accent); }
       .theme-toggle {
@@ -120,12 +128,12 @@
          transition, the exit timer is its delay, and visibility flips
          after the fade so a hidden menu takes no hover. The top
          padding is a transparent bridge that keeps the hover alive
-         between the icon and the panel. */
+         between the icon and the panel, with room for the tooltip. */
       .people-menu {
         position: absolute;
         top: 100%;
         right: -8px;
-        padding-top: 10px;
+        padding-top: 36px;
         opacity: 0;
         visibility: hidden;
         transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
@@ -235,7 +243,6 @@
       }
       .bubble.editing .bubble-actions { display: none; }
       .bubble-action {
-        position: relative;
         display: grid;
         place-items: center;
         width: 24px;
@@ -251,7 +258,8 @@
       .bubble-action:hover { color: var(--ink); }
       .bubble-action:focus-visible { outline-offset: 2px; }
       .bubble-action svg { width: 14px; height: 14px; }
-      .bubble-action::before, .bubble-action::after {
+      .icon-tooltip { position: relative; }
+      .icon-tooltip::before, .icon-tooltip::after {
         position: absolute;
         left: 50%;
         z-index: 2;
@@ -260,14 +268,14 @@
         pointer-events: none;
         visibility: hidden;
       }
-      .bubble-action::before {
+      .icon-tooltip::before {
         content: "";
         bottom: calc(100% + 3px);
         width: 6px;
         height: 6px;
         transform: translateX(-50%) rotate(45deg) scale(0.95);
       }
-      .bubble-action::after {
+      .icon-tooltip::after {
         content: attr(aria-label);
         bottom: calc(100% + 6px);
         padding: 5px 7px;
@@ -281,28 +289,38 @@
         transform: translate(-50%, 2px) scale(0.95);
         transform-origin: bottom center;
       }
-      .bubble-action:hover::before, .bubble-action:hover::after,
-      .bubble-action:focus-visible::before, .bubble-action:focus-visible::after {
+      .icon-tooltip-below::before {
+        top: calc(100% + 3px);
+        bottom: auto;
+      }
+      .icon-tooltip-below::after {
+        top: calc(100% + 6px);
+        bottom: auto;
+        transform: translate(-50%, -2px) scale(0.95);
+        transform-origin: top center;
+      }
+      .icon-tooltip:hover::before, .icon-tooltip:hover::after,
+      .icon-tooltip:focus-visible::before, .icon-tooltip:focus-visible::after {
         opacity: 1;
         visibility: visible;
       }
-      .bubble-action:hover::before,
-      .bubble-action:focus-visible::before {
+      .icon-tooltip:hover::before,
+      .icon-tooltip:focus-visible::before {
         transform: translateX(-50%) rotate(45deg) scale(1);
       }
-      .bubble-action:hover::after,
-      .bubble-action:focus-visible::after {
+      .icon-tooltip:hover::after,
+      .icon-tooltip:focus-visible::after {
         transform: translate(-50%, 0) scale(1);
       }
       @media (prefers-reduced-motion: no-preference) {
-        .bubble-action::before, .bubble-action::after {
+        .icon-tooltip::before, .icon-tooltip::after {
           transition-property: opacity, transform, visibility;
           transition-duration: 100ms, 100ms, 0ms;
           transition-timing-function: ease-out;
           transition-delay: 0ms, 0ms, 100ms;
         }
-        .bubble-action:hover::before, .bubble-action:hover::after,
-        .bubble-action:focus-visible::before, .bubble-action:focus-visible::after {
+        .icon-tooltip:hover::before, .icon-tooltip:hover::after,
+        .icon-tooltip:focus-visible::before, .icon-tooltip:focus-visible::after {
           transition-delay: 300ms;
         }
       }
