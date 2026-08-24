@@ -3,7 +3,8 @@ import type { Anchor } from "./anchors.ts";
 export interface RoundInstruction {
   words: string;
   anchor: Anchor;
-  author: { name: string; color: string; isHost: boolean };
+  // id is the author's public handle, never the session id.
+  author: { id: string; name: string; color: string; isHost: boolean };
 }
 
 export interface RoundReply {

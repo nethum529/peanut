@@ -13,6 +13,18 @@ let doc: Document;
 let cookie = "";
 const realFetch = globalThis.fetch;
 
+const INSTALLED_GLOBALS = [
+  "window",
+  "document",
+  "location",
+  "Node",
+  "Element",
+  "HTMLElement",
+  "Text",
+  "MouseEvent",
+  "KeyboardEvent",
+] as const;
+
 function setGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   g.window = win;
@@ -71,7 +83,9 @@ beforeEach(() => {
 afterEach(() => {
   resetView();
   server.stop();
-  (globalThis as Record<string, unknown>).fetch = realFetch;
+  const g = globalThis as Record<string, unknown>;
+  g.fetch = realFetch;
+  for (const name of INSTALLED_GLOBALS) delete g[name];
 });
 
 describe("chat sidebar", () => {
@@ -85,10 +99,22 @@ describe("chat sidebar", () => {
     const queued = doc.querySelector(".bubble.user.queued");
     expect(queued?.textContent).toContain("Also cover timeouts.");
 
+    await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie },
+      body: JSON.stringify({
+        words: "Tighten this block.",
+        anchor: { type: "stamp", selector: "p:nth-of-type(1)", guard: "first paragraph" },
+      }),
+    });
     (doc.querySelector(".send-button") as HTMLButtonElement).click();
     await Bun.sleep(150);
     expect(doc.querySelector(".bubble.queued")).toBeNull();
-    expect(doc.querySelector(".bubble.user")?.textContent).toContain("Also cover timeouts.");
+    const sent = doc.querySelector(".bubble.user");
+    expect(sent?.textContent).toContain("Also cover timeouts.");
+    expect(sent?.classList.contains("mine")).toBe(true);
+    const hints = [...doc.querySelectorAll(".bubble.user .hint")].map((h) => h.textContent);
+    expect(hints).toContain('on "first paragraph"');
     expect(doc.querySelector(".bubble.working")).not.toBeNull();
 
     const state = await realFetch(`${server.url}/api/rooms/${roomId}/state`, { headers: { cookie } });

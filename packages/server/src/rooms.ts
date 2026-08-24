@@ -297,6 +297,7 @@ export class RoomStore {
           words: instruction.words,
           anchor: instruction.anchor,
           author: {
+            id: author?.publicId ?? "",
             name: author?.name ?? "Unknown",
             color: author?.color ?? "#747b8c",
             isHost: author?.isHost ?? false,

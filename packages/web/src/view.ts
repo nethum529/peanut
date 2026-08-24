@@ -29,7 +29,11 @@ interface InstructionView {
 
 interface RoundView {
   number: number;
-  instructions: { words: string; author: { name: string; color: string } }[];
+  instructions: {
+    words: string;
+    anchor: InstructionView["anchor"];
+    author: { id: string; name: string; color: string };
+  }[];
   flushedBy: string;
   flushedAt: number;
   nextStep: string;
@@ -122,6 +126,15 @@ function showJoinDialog(roomId: string): void {
 
 function render(state: RoomStateView): void {
   const root = document.getElementById("app")!;
+  // A reader scrolled up in the chat keeps their place across the
+  // re-render; only a log already at the bottom follows new messages.
+  const previousLog = document.querySelector(".chat");
+  const chatScroll = {
+    stick:
+      !previousLog ||
+      previousLog.scrollTop + previousLog.clientHeight >= previousLog.scrollHeight - 40,
+    top: previousLog?.scrollTop ?? 0,
+  };
   root.replaceChildren();
   // Floating boxes live on document.body; a re-render must not leave
   // one pointing at a view that no longer exists.
@@ -161,7 +174,7 @@ function render(state: RoomStateView): void {
   const unanchored = renderInstructionMarks(plan, state);
   const lostIds = new Set(unanchored.map((instruction) => instruction.id));
 
-  body.append(left, renderSidebar(state, plan, lostIds));
+  body.append(left, renderSidebar(state, plan, lostIds, chatScroll));
   root.append(bar, body);
 
   if (state.status === "ended") {
@@ -221,10 +234,13 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
   const log = el("div", "chat");
   const ended = state.status === "ended";
 
+  const latest = state.rounds[state.rounds.length - 1];
   for (const round of state.rounds) {
     for (const instruction of round.instructions) {
-      const mine = instruction.author.name === state.you.name;
-      log.append(userBubble(instruction.words, instruction.author, mine, ""));
+      const mine = instruction.author.id === state.you.id;
+      log.append(
+        userBubble(instruction.words, instruction.author, mine, anchorHint(instruction.anchor, false)),
+      );
     }
     if (round.verdict) log.append(el("span", "chip", verdictLabel(round.verdict)));
     if (round.reply) {
@@ -232,7 +248,9 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
       bubble.append(el("span", "words", round.reply.message));
       if (round.reply.meta) bubble.append(el("span", "hint", round.reply.meta));
       log.append(bubble);
-    } else if (!ended) {
+    } else if (!ended && round === latest) {
+      // Only the newest round can still be in flight; an older round
+      // without a reply was simply never answered.
       log.append(el("div", "bubble agent working", "Working..."));
     }
   }
@@ -264,7 +282,12 @@ function renderConversation(state: RoomStateView, lostIds: Set<string>): HTMLEle
   return box;
 }
 
-function renderSidebar(state: RoomStateView, plan: HTMLElement, lostIds: Set<string>): HTMLElement {
+function renderSidebar(
+  state: RoomStateView,
+  plan: HTMLElement,
+  lostIds: Set<string>,
+  chatScroll: { stick: boolean; top: number },
+): HTMLElement {
   const side = el("aside", "sidebar");
   const ended = state.status === "ended";
 
@@ -277,10 +300,9 @@ function renderSidebar(state: RoomStateView, plan: HTMLElement, lostIds: Set<str
 
   const conversation = renderConversation(state, lostIds);
   side.append(conversation);
-  // The log opens scrolled to the newest message, like any chat.
   queueMicrotask(() => {
     const log = conversation.querySelector(".chat");
-    if (log) log.scrollTop = log.scrollHeight;
+    if (log) log.scrollTop = chatScroll.stick ? log.scrollHeight : chatScroll.top;
   });
 
   if (!ended) {
@@ -466,12 +488,8 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
   return unanchored;
 }
 
-function instructionRow(
-  state: RoomStateView,
-  instruction: InstructionView,
-  tag: "li" | "div",
-): HTMLElement {
-  const row = el(tag, "instruction");
+function instructionRow(state: RoomStateView, instruction: InstructionView): HTMLElement {
+  const row = el("div", "instruction");
   const author = el("span", "author", instruction.author.name);
   author.style.color = instruction.author.color;
   row.append(author, el("span", "words", instruction.words));
@@ -494,7 +512,7 @@ function showCard(mark: HTMLElement, state: RoomStateView, list: InstructionView
   closeCard();
   const card = el("div", "card");
   for (const instruction of list) {
-    card.append(instructionRow(state, instruction, "div"));
+    card.append(instructionRow(state, instruction));
   }
   positionNear(card, mark);
 }
