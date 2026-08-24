@@ -1,4 +1,5 @@
 import { unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
 import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
@@ -8,6 +9,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 //
 //   peanut share <file> [--title t] [--server url] [--session path]
 //   peanut reply <message> [--meta m] [--session path]
+//   peanut push [--session path]
 //   peanut wait [--session path]
 //   peanut serve [--state path] [--port n]
 //
@@ -21,6 +23,7 @@ interface Session {
   roomId: string;
   agentToken: string;
   lastRound: number;
+  filePath?: string;
   // Set only when this CLI started the server, so only then is the
   // server stopped at the end of the review.
   serverPid?: number;
@@ -93,6 +96,54 @@ async function api(
     headers: { authorization: `Bearer ${session.agentToken}` },
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
   });
+}
+
+type ContentUpdateResult = "updated" | "unchanged" | "skipped";
+
+async function updateContentFromFile(
+  session: Session,
+  refusal: "fail" | "warn" = "fail",
+): Promise<ContentUpdateResult> {
+  if (!session.filePath) {
+    console.error(
+      "Warning: This older session has no file path. The room document was not updated.",
+    );
+    return "skipped";
+  }
+  const file = Bun.file(session.filePath);
+  if (!(await file.exists())) {
+    console.error(
+      `Warning: The shared file no longer exists: ${session.filePath}. ` +
+        "The room document was not updated.",
+    );
+    return "skipped";
+  }
+  let content: string;
+  try {
+    content = await file.text();
+  } catch {
+    console.error(
+      `Warning: The shared file could not be read: ${session.filePath}. ` +
+        "The room document was not updated.",
+    );
+    return "skipped";
+  }
+  const response = await api(
+    session,
+    "PUT",
+    `/api/rooms/${session.roomId}/agent/content`,
+    { content },
+  );
+  if (!response.ok) {
+    if (refusal === "fail") fail(`The content update was refused (${response.status}).`);
+    console.error(
+      `Warning: The content update was refused (${response.status}). ` +
+        "The reply will still be sent.",
+    );
+    return "skipped";
+  }
+  const result = (await response.json()) as { updated: boolean };
+  return result.updated ? "updated" : "unchanged";
 }
 
 async function serverAlive(url: string): Promise<boolean> {
@@ -264,6 +315,7 @@ async function share(flags: Flags): Promise<never> {
     roomId: body.roomId,
     agentToken: body.agentToken,
     lastRound: 0,
+    filePath: resolve(filePath),
     ...(serverPid === undefined ? {} : { serverPid }),
   };
   await saveSession(flags, session);
@@ -292,6 +344,7 @@ async function reply(flags: Flags): Promise<never> {
   const message = flags.positional.join(" ").trim();
   if (!message) fail('Usage: peanut reply "<what you did>" [--meta m]');
   const session = await loadSession(flags);
+  await updateContentFromFile(session, "warn");
   const meta = flags.named.get("meta");
   const response = await api(session, "POST", `/api/rooms/${session.roomId}/agent/reply`, {
     message,
@@ -310,6 +363,13 @@ async function reply(flags: Flags): Promise<never> {
   }
   console.log("Reply sent. Waiting for the next round...");
   return waitAndPrint(flags, session);
+}
+
+async function push(flags: Flags): Promise<void> {
+  const session = await loadSession(flags);
+  const result = await updateContentFromFile(session);
+  if (result === "updated") console.log("Document pushed.");
+  if (result === "unchanged") console.log("Document unchanged.");
 }
 
 // Resumes blocking on an open review without sending anything. This
@@ -339,9 +399,10 @@ const command = flags.positional.shift();
 try {
   if (command === "share") await share(flags);
   else if (command === "reply") await reply(flags);
+  else if (command === "push") await push(flags);
   else if (command === "wait") await wait(flags);
   else if (command === "serve") await serve(flags);
-  else fail("Usage: peanut <share|reply|wait|serve> ...");
+  else fail("Usage: peanut <share|reply|push|wait|serve> ...");
 } catch (error) {
   // A transport failure must not look like a review verdict. Exit 1
   // is reserved for a review that ended without approve.

@@ -38,6 +38,7 @@ async function writePlan(): Promise<string> {
 interface SessionFile {
   roomId: string;
   agentToken: string;
+  filePath?: string;
 }
 
 async function waitForSession(path: string): Promise<SessionFile> {
@@ -151,6 +152,8 @@ describe("peanut cli", () => {
     await pinAndFlush(session.roomId, cookie, "Cap the backoff.");
     expect(await first.exited).toBe(0);
 
+    await Bun.write(plan, "# Plan\n\nBackoff is capped at 30 seconds.\n");
+
     const second = run(["reply", "Backoff capped at 30s.", "--meta", "tests: 12 passed"]);
     await Bun.sleep(300);
     const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
@@ -158,6 +161,8 @@ describe("peanut cli", () => {
     }).then((r) => r.json());
     expect(state.rounds[0].reply.message).toBe("Backoff capped at 30s.");
     expect(state.rounds[0].reply.meta).toBe("tests: 12 passed");
+    expect(state.content).toContain("Backoff is capped at 30 seconds.");
+    expect(state.contentVersion).toBe(2);
 
     await pinAndFlush(session.roomId, cookie, "Looks good.", "approve");
     expect(await second.exited).toBe(0);
@@ -166,6 +171,142 @@ describe("peanut cli", () => {
     // The session file is gone after the review ends.
     expect(await Bun.file(join(dir, ".peanut-session.json")).exists()).toBe(false);
   }, 15000);
+
+  test("push sends changed content and returns without waiting for a round", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--server", server.url]);
+    const session = await waitForSession(join(dir, SESSION));
+    const cookie = await joinAsHost(session.roomId);
+
+    await Bun.write(plan, "# Plan\n\nCurrent without a reply.\n");
+    const pushing = run(["push"]);
+    expect(await pushing.exited).toBe(0);
+    expect(await new Response(pushing.stdout).text()).toContain("Document pushed.");
+
+    const unchanged = run(["push"]);
+    expect(await unchanged.exited).toBe(0);
+    expect(await new Response(unchanged.stdout).text()).toContain("Document unchanged.");
+
+    const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toContain("Current without a reply.");
+    expect(state.contentVersion).toBe(2);
+
+    await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(await sharing.exited).toBe(1);
+  }, 15000);
+
+  test("reply warns after a host end, prints the verdict, and cleans up", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--server", server.url]);
+    const sessionPath = join(dir, SESSION);
+    const session = await waitForSession(sessionPath);
+    const cookie = await joinAsHost(session.roomId);
+    await pinAndFlush(session.roomId, cookie, "Finish the work.");
+    expect(await sharing.exited).toBe(0);
+
+    await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    const replying = run(["reply", "Work finished."]);
+    expect(await replying.exited).toBe(1);
+    const output = await new Response(replying.stdout).text();
+    expect(output).toContain("== Review ended ==");
+    expect(output).toContain("Verdict: end (by user)");
+    expect(await new Response(replying.stderr).text()).toContain(
+      "Warning: The content update was refused (409).",
+    );
+    expect(await Bun.file(sessionPath).exists()).toBe(false);
+  }, 15000);
+
+  test("reply warns for a missing file, sends the reply, and keeps the content", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--server", server.url]);
+    const session = await waitForSession(join(dir, SESSION));
+    const cookie = await joinAsHost(session.roomId);
+    await pinAndFlush(session.roomId, cookie, "Remove the file.");
+    expect(await sharing.exited).toBe(0);
+    await rm(plan);
+
+    const replying = run(["reply", "The file is gone."]);
+    await Bun.sleep(300);
+    const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.rounds[0].reply.message).toBe("The file is gone.");
+    expect(state.content).toContain("Retry forever on failure.");
+    expect(state.contentVersion).toBe(1);
+
+    await pinAndFlush(session.roomId, cookie, "Done.", "approve");
+    expect(await replying.exited).toBe(0);
+    expect(await new Response(replying.stderr).text()).toContain(
+      "Warning: The shared file no longer exists",
+    );
+  }, 15000);
+
+  test("old sessions warn and skip content updates for push and reply", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--server", server.url]);
+    const sessionPath = join(dir, SESSION);
+    const session = await waitForSession(sessionPath);
+    const cookie = await joinAsHost(session.roomId);
+    await pinAndFlush(session.roomId, cookie, "Keep compatibility.");
+    expect(await sharing.exited).toBe(0);
+
+    const stored = await Bun.file(sessionPath).json();
+    delete stored.filePath;
+    await Bun.write(sessionPath, JSON.stringify(stored));
+    await Bun.write(plan, "# New content that must not be sent\n");
+
+    const pushing = run(["push"]);
+    expect(await pushing.exited).toBe(0);
+    expect(await new Response(pushing.stderr).text()).toContain("older session has no file path");
+
+    const replying = run(["reply", "Compatibility kept."]);
+    await Bun.sleep(300);
+    const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.rounds[0].reply.message).toBe("Compatibility kept.");
+    expect(state.content).toContain("Retry forever on failure.");
+    expect(state.contentVersion).toBe(1);
+    await pinAndFlush(session.roomId, cookie, "Done.", "approve");
+    expect(await replying.exited).toBe(0);
+    expect(await new Response(replying.stderr).text()).toContain("older session has no file path");
+  }, 15000);
+
+  test("push refuses an ended room with no rounds", async () => {
+    const plan = await writePlan();
+    const created = await fetch(`${server.url}/api/rooms`, {
+      method: "POST",
+      body: JSON.stringify({ title: "Ended", content: "# Plan", hostless: true }),
+    }).then((response) => response.json());
+    await fetch(`${server.url}/api/rooms/${created.roomId}/agent/end`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${created.agentToken}` },
+    });
+    await Bun.write(
+      join(dir, SESSION),
+      JSON.stringify({
+        server: server.url,
+        roomId: created.roomId,
+        agentToken: created.agentToken,
+        lastRound: 0,
+        filePath: plan,
+      }),
+    );
+
+    const pushing = run(["push"]);
+    expect(await pushing.exited).toBe(2);
+    expect(await new Response(pushing.stderr).text()).toContain(
+      "The content update was refused (409).",
+    );
+  });
 
   test("an end without approve exits nonzero", async () => {
     const plan = await writePlan();

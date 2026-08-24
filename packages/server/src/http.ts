@@ -250,6 +250,20 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json({ replied: true }, 201);
   }
 
+  const contentMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/content$/);
+  if (request.method === "PUT" && contentMatch) {
+    const body = await readJson(request);
+    if (typeof body.content !== "string") {
+      throw new RoomError("bad_instruction", "content must be a string");
+    }
+    const result = store.replaceContent(
+      contentMatch[1]!,
+      bearerToken(request),
+      body.content,
+    );
+    return json(result);
+  }
+
   const ackMatch = path.match(/^\/api\/rooms\/([^/]+)\/agent\/ack$/);
   if (request.method === "POST" && ackMatch) {
     const body = await readJson(request);

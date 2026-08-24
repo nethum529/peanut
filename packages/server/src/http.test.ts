@@ -141,6 +141,82 @@ describe("room document", () => {
   });
 });
 
+describe("agent content", () => {
+  test("replaces changed content and only bumps the version for a change", async () => {
+    const { body, cookie } = await createRoom();
+    expect(body.state.contentVersion).toBe(1);
+
+    const changed = await fetch(`${server.url}/api/rooms/${body.roomId}/agent/content`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${body.agentToken}` },
+      body: JSON.stringify({ content: "# Current plan" }),
+    });
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toEqual({ updated: true, contentVersion: 2 });
+
+    const unchanged = await fetch(`${server.url}/api/rooms/${body.roomId}/agent/content`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${body.agentToken}` },
+      body: JSON.stringify({ content: "# Current plan" }),
+    });
+    expect(await unchanged.json()).toEqual({ updated: false, contentVersion: 2 });
+
+    const state = await fetch(`${server.url}/api/rooms/${body.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toBe("# Current plan");
+    expect(state.contentVersion).toBe(2);
+  });
+
+  test("requires the agent token and refuses an ended room with no rounds", async () => {
+    const { body, cookie } = await createRoom();
+    const path = `${server.url}/api/rooms/${body.roomId}/agent/content`;
+    const unauthorized = await fetch(path, {
+      method: "PUT",
+      body: JSON.stringify({ content: "# Refused" }),
+    });
+    expect(unauthorized.status).toBe(401);
+    expect((await unauthorized.json()).error).toBe("bad_agent_token");
+
+    await fetch(`${server.url}/api/rooms/${body.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    const ended = await fetch(path, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${body.agentToken}` },
+      body: JSON.stringify({ content: "# Too late" }),
+    });
+    expect(ended.status).toBe(409);
+    expect((await ended.json()).error).toBe("room_ended");
+  });
+
+  test("requires string content and allows an empty document", async () => {
+    const { body, cookie } = await createRoom();
+    const path = `${server.url}/api/rooms/${body.roomId}/agent/content`;
+    for (const payload of [{}, { content: 42 }, { content: null }]) {
+      const invalid = await fetch(path, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${body.agentToken}` },
+        body: JSON.stringify(payload),
+      });
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error).toBe("bad_instruction");
+    }
+
+    const empty = await fetch(path, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${body.agentToken}` },
+      body: JSON.stringify({ content: "" }),
+    });
+    expect(await empty.json()).toEqual({ updated: true, contentVersion: 2 });
+    const state = await fetch(`${server.url}/api/rooms/${body.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toBe("");
+  });
+});
+
 describe("guest join", () => {
   test("guest gets a session cookie, a palette color, and shows in state", async () => {
     const { body: created } = await createRoom();

@@ -985,6 +985,83 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".plan-shell")).toBeNull();
   });
 
+  test("reloads the document and re-sends state when contentVersion increases", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    const original = frame();
+    expect(original.src).toEndWith("/document?v=1");
+    await realFetch(`${server.url}/api/rooms/${room.roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie },
+      body: JSON.stringify({
+        words: "Keep this pinned.",
+        anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+      }),
+    });
+    const updated = await realFetch(`${server.url}/api/rooms/${room.roomId}/agent/content`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${room.agentToken}` },
+      body: JSON.stringify({ content: "# Plan\n\nsecond paragraph" }),
+    });
+    expect(await updated.json()).toEqual({ updated: true, contentVersion: 2 });
+
+    await Bun.sleep(2200);
+    expect(frame()).toBe(original);
+    expect(frame().src).toEndWith("/document?v=2");
+    expect(doc.querySelector(".toast-region")?.textContent).toBe("Document updated");
+    connectFakeOverlay();
+    expect(overlayMessages).toContainEqual(
+      expect.objectContaining({
+        type: "state",
+        instructions: [expect.objectContaining({ words: "Keep this pinned." })],
+      }),
+    );
+  }, 6000);
+
+  test("waits for a draft owner to choose reload", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    const original = frame();
+    postFromOverlay({ type: "draft-state", hasDraft: true });
+    await realFetch(`${server.url}/api/rooms/${room.roomId}/agent/content`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${room.agentToken}` },
+      body: JSON.stringify({ content: "# Plan\n\nsecond paragraph" }),
+    });
+
+    await Bun.sleep(2200);
+    expect(frame().src).toEndWith("/document?v=1");
+    expect(overlayMessages).toContainEqual({ type: "new-version" });
+    await Bun.sleep(2100);
+    expect(
+      overlayMessages.filter(
+        (message) => (message as { type?: string }).type === "new-version",
+      ),
+    ).toHaveLength(1);
+    expect(doc.querySelector(".toast-region")?.textContent).toBe("");
+
+    postFromOverlay({ type: "reload-document" });
+    await Bun.sleep(20);
+    expect(frame()).toBe(original);
+    expect(frame().src).toEndWith("/document?v=2");
+  }, 8000);
+
+  test("does not reload when the content endpoint skips equal content", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    const originalSrc = frame().src;
+    const response = await realFetch(
+      `${server.url}/api/rooms/${room.roomId}/agent/content`,
+      {
+        method: "PUT",
+        headers: { authorization: `Bearer ${room.agentToken}` },
+        body: JSON.stringify({ content: "# Plan\n\nfirst paragraph" }),
+      },
+    );
+    expect(await response.json()).toEqual({ updated: false, contentVersion: 1 });
+
+    await Bun.sleep(2200);
+    expect(frame().src).toBe(originalSrc);
+    expect(doc.querySelector(".toast-region")?.textContent).toBe("");
+  }, 6000);
+
   test("theme starts dark and the sun toggle saves a light choice", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const toggle = doc.querySelector(".theme-toggle") as HTMLButtonElement;
@@ -1070,7 +1147,7 @@ describe("chat sidebar", () => {
     const original = frame();
     expect(original.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-popups");
     expect(original.src).toContain("/api/rooms/");
-    expect(original.src).toEndWith("/document");
+    expect(original.src).toEndWith("/document?v=1");
 
     postFromOverlay({ type: "pin", words: "bad", anchor: { type: "stamp", selector: "p" } }, "https://evil.test");
     postFromOverlay({ type: "pin", words: "bad", anchor: { type: "stamp", selector: "p" } }, "null", win);
