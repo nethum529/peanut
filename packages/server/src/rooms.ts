@@ -256,7 +256,7 @@ export class RoomStore {
     return instruction;
   }
 
-  // The author can withdraw their own instruction; the host can prune any.
+  // Removal follows canModerate: the author, the host, or a granted guest.
   removeInstruction(roomId: string, sessionId: string | undefined, instructionId: string): void {
     const room = this.getRoom(roomId);
     if (room.status === "ended") throw new RoomError("room_ended", "the session has ended");

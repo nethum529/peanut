@@ -209,6 +209,22 @@ describe("editing", () => {
     expect((await edit(roomId, hostCookie, body.id, "   ")).status).toBe(400);
     expect((await edit(roomId, hostCookie, body.id, "x".repeat(2001))).status).toBe(400);
   });
+
+  test("editing a missing instruction is a 404", async () => {
+    const { roomId, hostCookie } = await setup();
+    expect((await edit(roomId, hostCookie, "nope", "New words.")).status).toBe(404);
+  });
+
+  test("a flushed instruction can not be edited", async () => {
+    const { roomId, hostCookie } = await setup();
+    const { body } = await pin(roomId, hostCookie, "Queued words.");
+    await fetch(`${server.url}/api/rooms/${roomId}/flush`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ domSnapshot: "<main></main>", nextStep: "" }),
+    });
+    expect((await edit(roomId, hostCookie, body.id, "Too late.")).status).toBe(404);
+  });
 });
 
 describe("instructions after the end", () => {
