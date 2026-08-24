@@ -399,6 +399,8 @@ describe("chat sidebar", () => {
 
     expect(doc.documentElement.dataset.theme).toBe("dark");
     expect(toggle.getAttribute("aria-label")).toBe("Use light theme");
+    expect(toggle.classList.contains("icon-tooltip")).toBe(true);
+    expect(toggle.classList.contains("icon-tooltip-below")).toBe(true);
     expect(toggle.querySelector("circle")?.getAttribute("r")).toBe("4");
     expect(toggle.querySelector("svg")?.getAttribute("stroke")).toBe("currentColor");
 
