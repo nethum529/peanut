@@ -716,7 +716,6 @@ function renderSidebar(
   }
 
   if (!ended && state.you.isHost) {
-    side.append(renderPermissions(state));
     // Ending is irreversible, so the first click only arms the button.
     const end = el("button", "end-button", "End session");
     let armed = false;
@@ -760,34 +759,6 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
     }
   };
   box.append(send, note);
-  return box;
-}
-
-function renderPermissions(state: RoomStateView): HTMLElement {
-  const box = el("section", "permissions");
-  box.append(el("h2", undefined, "Guest send permission"));
-  const guests = state.participants.filter((participant) => !participant.isHost);
-  if (guests.length === 0) {
-    box.append(el("p", "empty", "No guests yet."));
-    return box;
-  }
-  for (const guest of guests) {
-    const row = el("label", "grant-row");
-    const toggle = el("input");
-    toggle.type = "checkbox";
-    toggle.checked = guest.canSend;
-    toggle.onchange = async () => {
-      await postJson(`/api/rooms/${state.id}/grants`, {
-        participantId: guest.id,
-        canSend: toggle.checked,
-      });
-      refresh(state.id);
-    };
-    const name = el("span", undefined, guest.name);
-    setAuthorColor(name, guest.color, "author-text");
-    row.append(toggle, name);
-    box.append(row);
-  }
   return box;
 }
 

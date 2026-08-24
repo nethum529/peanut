@@ -204,6 +204,19 @@ describe("chat sidebar", () => {
     expect(html).not.toContain(".send select");
   });
 
+  test("host sidebar omits guest permissions and keeps End session", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+
+    expect(doc.querySelector(".permissions")).toBeNull();
+    expect(doc.querySelector(".grant-row")).toBeNull();
+    expect(doc.body.textContent).not.toContain("Guest send permission");
+    expect(doc.body.textContent).not.toContain("No guests yet.");
+    expect(doc.querySelector(".end-button")?.textContent).toBe("End session");
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    expect(html).not.toContain(".grant-row");
+  });
+
   test("queued icon buttons stay crisp in the bottom-right footer", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     click(doc.querySelector("#plan p")!);
