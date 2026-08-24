@@ -51,16 +51,18 @@
       }
       :root {
         color-scheme: dark;
-        --accent: #aeb4ff;
-        --ink: #f0f1f5;
-        --muted: #aeb3c1;
-        --line: #676d80;
-        --paper: #17181f;
-        --surface: #20222b;
-        --on-accent: #17181f;
+        --accent: #0d1b2a;
+        --accent-text: color-mix(in srgb, var(--accent) 35%, white);
+        --accent-border: color-mix(in srgb, var(--accent) 55%, white);
+        --ink: #e6e9ef;
+        --muted: #a4abba;
+        --line: #2a3140;
+        --paper: #10141b;
+        --surface: #171c25;
+        --on-accent: #e6e9ef;
         --danger: #ff9b9b;
         --shadow: rgba(0, 0, 0, 0.36);
-        --pin-background: rgba(174, 180, 255, 0.18);
+        --pin-background: color-mix(in srgb, var(--accent-text) 18%, transparent);
         --tooltip-background: #171717;
         --tooltip-ink: #fafafa;
         --tooltip-shadow: rgba(0, 0, 0, 0.18);
@@ -68,16 +70,18 @@
       }
       [data-theme="light"] {
         color-scheme: light;
-        --accent: #5a5f9e;
+        --accent: #0d1b2a;
+        --accent-text: var(--accent);
+        --accent-border: color-mix(in srgb, var(--accent) 55%, white);
         --ink: #2b2e3a;
-        --muted: #747b8c;
-        --line: #d9dce4;
-        --paper: #f5f6f9;
+        --muted: #364357;
+        --line: #d5dae3;
+        --paper: #f3f5f8;
         --surface: #fff;
         --on-accent: #fff;
         --danger: #a33;
-        --shadow: rgba(43, 46, 58, 0.12);
-        --pin-background: rgba(90, 95, 158, 0.14);
+        --shadow: rgba(16, 20, 27, 0.12);
+        --pin-background: color-mix(in srgb, var(--accent) 14%, transparent);
         --author-lighten: 0%;
       }
       * { box-sizing: border-box; }
@@ -95,7 +99,7 @@
         background: var(--surface);
         border-bottom: 1px solid var(--line);
       }
-      .wordmark { font-weight: 700; color: var(--accent); }
+      .wordmark { font-weight: 700; color: var(--accent-text); }
       .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .people { position: relative; display: flex; }
       .people-icon {
@@ -108,7 +112,7 @@
         cursor: pointer;
       }
       .people-icon svg { width: 20px; height: 20px; }
-      .people:hover .people-icon { color: var(--accent); }
+      .people:hover .people-icon { color: var(--accent-text); }
       .theme-toggle {
         width: 32px;
         height: 32px;
@@ -121,7 +125,7 @@
         color: var(--muted);
         cursor: pointer;
       }
-      .theme-toggle:hover { color: var(--accent); }
+      .theme-toggle:hover { color: var(--accent-text); }
       .theme-toggle:focus-visible { outline-offset: 2px; }
       .theme-toggle svg { width: 20px; height: 20px; }
       /* Hover intent without scripts: the fade is an opacity
@@ -213,7 +217,7 @@
       }
       .bubble.user.mine {
         background: var(--accent);
-        border-color: var(--accent);
+        border: 1px solid var(--accent-border);
         color: var(--on-accent);
       }
       .bubble.agent {
@@ -249,7 +253,7 @@
         padding: 0;
         touch-action: manipulation;
       }
-      .bubble-action:hover, .bubble-action:focus-visible { color: var(--accent); }
+      .bubble-action:hover, .bubble-action:focus-visible { color: var(--accent-text); }
       .bubble.user.mine .bubble-action { color: var(--on-accent); opacity: 0.8; }
       .bubble.user.mine .bubble-action:hover,
       .bubble.user.mine .bubble-action:focus-visible { opacity: 1; }
@@ -360,8 +364,8 @@
         align-self: center;
         font-size: 12px;
         font-weight: 600;
-        color: var(--accent);
-        border: 1px solid var(--accent);
+        color: var(--accent-text);
+        border: 1px solid var(--accent-text);
         border-radius: 999px;
         padding: 2px 10px;
       }
@@ -380,7 +384,7 @@
       }
       .queue-button {
         padding: 9px 14px;
-        border: 0;
+        border: 1px solid var(--accent-border);
         border-radius: 10px;
         background: var(--accent);
         color: var(--on-accent);
@@ -391,14 +395,14 @@
         gap: 8px;
         align-items: baseline;
         padding: 10px;
-        border: 1px solid var(--accent);
+        border: 1px solid var(--accent-text);
         border-radius: 6px;
-        color: var(--accent);
+        color: var(--accent-text);
       }
       .send-button {
         width: 100%;
         padding: 10px;
-        border: 0;
+        border: 1px solid var(--accent-border);
         border-radius: 6px;
         background: var(--accent);
         color: var(--on-accent);
@@ -495,7 +499,7 @@
         overflow-x: auto;
       }
       .plan code { font-size: 0.92em; }
-      .plan a { color: var(--accent); }
+      .plan a { color: var(--accent-text); }
       .join, .notice {
         max-width: 380px;
         margin: 15vh auto;
@@ -516,7 +520,7 @@
       }
       .join button {
         padding: 10px;
-        border: 0;
+        border: 1px solid var(--accent-border);
         border-radius: 6px;
         background: var(--accent);
         color: var(--on-accent);
@@ -525,7 +529,7 @@
       }
       .error { color: var(--danger); min-height: 1em; margin: 0; }
       .stamp-hover {
-        outline: 2px solid var(--accent);
+        outline: 1px solid var(--accent-border);
         outline-offset: 4px;
         border-radius: 6px;
         cursor: pointer;
@@ -566,7 +570,7 @@
       }
       .composer button, .remove {
         padding: 6px 10px;
-        border: 0;
+        border: 1px solid var(--accent-border);
         border-radius: 4px;
         background: var(--accent);
         color: var(--on-accent);

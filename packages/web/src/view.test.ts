@@ -506,6 +506,16 @@ describe("chat sidebar", () => {
     expect(themeBootstrap).toBeLessThan(html.indexOf("<style>"));
   });
 
+  test("both themes use the sapphire palette", async () => {
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+
+    expect(html.match(/--accent: #0d1b2a;/g)).toHaveLength(2);
+    expect(html).toContain("--accent-text: color-mix(in srgb, var(--accent) 35%, white);");
+    expect(html).toContain("--paper: #10141b;");
+    expect(html).toContain("--surface: #171c25;");
+    expect(html).toContain("--paper: #f3f5f8;");
+  });
+
   test("a stamp composer closes when a click lands outside it", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     expect(doc.querySelector(".stamp-toggle")).toBeNull();
