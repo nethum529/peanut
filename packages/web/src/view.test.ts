@@ -12,6 +12,11 @@ let win: Window;
 let doc: Document;
 let cookie = "";
 const realFetch = globalThis.fetch;
+const RealWebSocket = globalThis.WebSocket;
+const BunWebSocket = RealWebSocket as unknown as new (
+  url: string | URL,
+  options: { headers: Record<string, string> },
+) => WebSocket;
 
 const INSTALLED_GLOBALS = [
   "window",
@@ -36,6 +41,11 @@ function setGlobals(): void {
   g.Text = win.Text;
   g.MouseEvent = win.MouseEvent;
   g.KeyboardEvent = win.KeyboardEvent;
+  // Browser sockets include the room cookie automatically. Bun's test
+  // socket needs the same cookie supplied as an explicit header.
+  g.WebSocket = function TestWebSocket(url: string | URL): WebSocket {
+    return new BunWebSocket(url, { headers: { cookie } });
+  };
   g.fetch = ((input: string | URL | Request, init?: RequestInit) => {
     const raw = String(input);
     const url = raw.startsWith("http") ? raw : server.url.replace(/\/$/, "") + raw;
@@ -43,20 +53,28 @@ function setGlobals(): void {
   }) as typeof fetch;
 }
 
-async function createRoom(content: string): Promise<{ roomId: string; agentToken: string }> {
+async function createRoom(content: string): Promise<{
+  roomId: string;
+  agentToken: string;
+  participant: { id: string; name: string; color: string };
+}> {
   const created = await realFetch(`${server.url}/api/rooms`, {
     method: "POST",
     body: JSON.stringify({ title: "Chat test", content, hostName: "Nethum" }),
   });
   cookie = (created.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
   const body = await created.json();
-  return { roomId: body.roomId, agentToken: body.agentToken };
+  return { roomId: body.roomId, agentToken: body.agentToken, participant: body.state.you };
 }
 
 async function openRoom(
   content: string,
   savedTheme?: "dark" | "light",
-): Promise<{ roomId: string; agentToken: string }> {
+): Promise<{
+  roomId: string;
+  agentToken: string;
+  participant: { id: string; name: string; color: string };
+}> {
   const room = await createRoom(content);
   await openExistingRoom(room.roomId, cookie, savedTheme);
   return room;
@@ -75,6 +93,32 @@ async function openExistingRoom(
   setGlobals();
   await boot();
   await Bun.sleep(50);
+}
+
+async function joinRoom(
+  roomId: string,
+  name: string,
+): Promise<{ cookie: string; participant: { id: string; name: string; color: string } }> {
+  const response = await realFetch(`${server.url}/api/rooms/${roomId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  const state = await response.json();
+  return {
+    cookie: (response.headers.get("set-cookie") ?? "").split(";")[0] ?? "",
+    participant: state.you,
+  };
+}
+
+function connectRelay(roomId: string, peerCookie: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = new BunWebSocket(
+      `${server.url.replace("http", "ws")}/api/rooms/${roomId}/relay`,
+      { headers: { cookie: peerCookie } },
+    );
+    socket.onopen = () => resolve(socket);
+    socket.onerror = () => reject(new Error("connection failed"));
+  });
 }
 
 // happy-dom event classes are not the lib.dom ones; the cast keeps
@@ -109,6 +153,7 @@ afterEach(() => {
   server.stop();
   const g = globalThis as Record<string, unknown>;
   g.fetch = realFetch;
+  g.WebSocket = RealWebSocket;
   for (const name of INSTALLED_GLOBALS) delete g[name];
 });
 
@@ -436,5 +481,132 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".composer")).not.toBeNull();
     click(doc.querySelector(".sidebar")!);
     expect(doc.querySelector(".composer")).toBeNull();
+  });
+});
+
+describe("live cursors", () => {
+  test("shows a peer at normalized plan coordinates with their state color and name", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+
+    peer.send(
+      JSON.stringify({
+        type: "cursor",
+        participantId: guest.participant.id,
+        x: 0.25,
+        y: 0.75,
+        color: "#ff0000",
+      }),
+    );
+    await Bun.sleep(50);
+
+    const cursor = doc.querySelector(".live-cursor") as HTMLElement;
+    expect(cursor).not.toBeNull();
+    expect(cursor.style.left).toBe("25%");
+    expect(cursor.style.top).toBe("75%");
+    expect(cursor.classList.contains("author-cursor")).toBe(true);
+    expect(cursor.style.getPropertyValue("--author-color")).toBe(guest.participant.color);
+    expect(cursor.querySelector(".cursor-name")?.textContent).toBe("Sam");
+
+    await Bun.sleep(3200);
+    expect(doc.querySelector(".live-cursor")).toBeNull();
+    peer.close();
+  }, 5000);
+
+  test("rejects invalid, unknown, and self-asserted cursor frames", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+
+    for (const frame of [
+      { type: "cursor", participantId: guest.participant.id, x: -0.1, y: 0.5 },
+      { type: "cursor", participantId: "unknown", x: 0.5, y: 0.5 },
+      { type: "cursor", participantId: room.participant.id, x: 0.5, y: 0.5 },
+    ]) {
+      peer.send(JSON.stringify(frame));
+    }
+    peer.send("null");
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".live-cursor")).toBeNull();
+    peer.close();
+  });
+
+  test("keeps a live cursor across a room state re-render", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const hostCookie = cookie;
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, hostCookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+    peer.send(
+      JSON.stringify({
+        type: "cursor",
+        participantId: guest.participant.id,
+        x: 0.25,
+        y: 0.75,
+      }),
+    );
+    await Bun.sleep(50);
+    const before = doc.querySelector(".live-cursor");
+    expect(before).not.toBeNull();
+
+    await joinRoom(room.roomId, "Alex");
+    await Bun.sleep(2100);
+
+    expect(doc.querySelectorAll(".person-row")).toHaveLength(3);
+    const after = doc.querySelector(".live-cursor");
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(after?.querySelector(".cursor-name")?.textContent).toBe("Sam");
+    peer.close();
+  }, 4000);
+
+  test("throttles pointer updates and sends the latest plan-relative position", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+    const messages: Array<{
+      type: string;
+      participantId: string;
+      x?: number;
+      y?: number;
+    }> = [];
+    peer.onmessage = (event) => messages.push(JSON.parse(String(event.data)));
+    const plan = doc.getElementById("plan") as HTMLElement;
+    plan.getBoundingClientRect = () =>
+      ({ left: 100, top: 200, width: 200, height: 200, right: 300, bottom: 400 }) as DOMRect;
+
+    for (const [clientX, clientY] of [
+      [110, 210],
+      [130, 230],
+      [150, 250],
+      [170, 270],
+      [200, 300],
+    ]) {
+      plan.dispatchEvent(
+        new win.MouseEvent("pointermove", { bubbles: true, clientX, clientY }) as unknown as Event,
+      );
+    }
+    await Bun.sleep(100);
+
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+    expect(messages.length).toBeLessThanOrEqual(2);
+    expect(messages.at(-1)).toEqual({
+      type: "cursor",
+      participantId: room.participant.id,
+      x: 0.5,
+      y: 0.5,
+    });
+    plan.dispatchEvent(new win.MouseEvent("pointerleave") as unknown as Event);
+    await Bun.sleep(50);
+    expect(messages.at(-1)).toEqual({
+      type: "cursor-leave",
+      participantId: room.participant.id,
+    });
+    peer.close();
   });
 });

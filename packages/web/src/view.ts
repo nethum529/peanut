@@ -55,6 +55,29 @@ interface RoomStateView {
 }
 
 const POLL_MS = 2000;
+const CURSOR_SEND_MS = 40;
+const CURSOR_STALE_MS = 3000;
+const CURSOR_FADE_MS = 180;
+
+interface CursorMessage {
+  type: "cursor";
+  participantId: string;
+  x: number;
+  y: number;
+}
+
+interface CursorLeaveMessage {
+  type: "cursor-leave";
+  participantId: string;
+}
+
+interface RemoteCursor {
+  x: number;
+  y: number;
+  staleTimer: ReturnType<typeof setTimeout>;
+  removeTimer: ReturnType<typeof setTimeout> | null;
+  element: HTMLElement | null;
+}
 
 // The Lucide users icon, verbatim (lucide.dev, ISC license). The
 // toolbar shows it in place of participant chips.
@@ -125,6 +148,14 @@ function setAuthorColor(node: HTMLElement, color: string, className: string): vo
 
 let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let relaySocket: WebSocket | null = null;
+let relayRoomId: string | null = null;
+let relayReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let cursorSendTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingCursor: { x: number; y: number } | null = null;
+let lastCursorSentAt = 0;
+let currentState: RoomStateView | null = null;
+const remoteCursors = new Map<string, RemoteCursor>();
 // Stamp mode lives outside render, so a state refresh keeps the
 // current choice. It starts on: block stamping is the main gesture,
 // and text selection pinning is one toggle away.
@@ -191,7 +222,210 @@ function showJoinDialog(roomId: string): void {
   };
 }
 
+function cursorElement(participant: ParticipantView, cursor: RemoteCursor): HTMLElement {
+  const node = el("div", "live-cursor");
+  node.dataset.participantId = participant.id;
+  node.setAttribute("aria-hidden", "true");
+  setAuthorColor(node, participant.color, "author-cursor");
+  node.innerHTML =
+    '<svg viewBox="0 0 20 24" aria-hidden="true" focusable="false">' +
+    '<path d="M2 1.5v17.8l4.4-4.2 3.6 7.4 3.7-1.8-3.6-7.2h6.1L2 1.5Z"/>' +
+    "</svg>";
+  node.append(el("span", "cursor-name", participant.name));
+  positionCursorElement(node, cursor.x, cursor.y);
+  node.classList.toggle("stale", cursor.removeTimer !== null);
+  return node;
+}
+
+function positionCursorElement(node: HTMLElement, x: number, y: number): void {
+  node.style.left = `${x * 100}%`;
+  node.style.top = `${y * 100}%`;
+  node.classList.toggle("right-edge", x > 0.75);
+  node.classList.toggle("bottom-edge", y > 0.9);
+}
+
+function renderRemoteCursors(state: RoomStateView): void {
+  const layer = document.querySelector(".cursor-layer");
+  if (!layer) return;
+  const participants = new Map(
+    state.participants.map((participant) => [participant.id, participant]),
+  );
+  for (const [participantId, cursor] of remoteCursors) {
+    const participant = participants.get(participantId);
+    if (!participant || participant.you) {
+      removeRemoteCursor(participantId);
+      continue;
+    }
+    const node = cursorElement(participant, cursor);
+    cursor.element = node;
+    layer.append(node);
+  }
+}
+
+function removeRemoteCursor(participantId: string): void {
+  const cursor = remoteCursors.get(participantId);
+  if (!cursor) return;
+  clearTimeout(cursor.staleTimer);
+  if (cursor.removeTimer !== null) clearTimeout(cursor.removeTimer);
+  cursor.element?.remove();
+  remoteCursors.delete(participantId);
+}
+
+function fadeRemoteCursor(participantId: string): void {
+  const cursor = remoteCursors.get(participantId);
+  if (!cursor || cursor.removeTimer !== null) return;
+  cursor.element?.classList.add("stale");
+  cursor.removeTimer = setTimeout(() => removeRemoteCursor(participantId), CURSOR_FADE_MS);
+}
+
+function clearRemoteCursors(): void {
+  for (const participantId of [...remoteCursors.keys()]) removeRemoteCursor(participantId);
+}
+
+function receiveCursorFrame(data: unknown): void {
+  if (typeof data !== "string" || !currentState) return;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(data);
+  } catch {
+    return;
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return;
+  const message = decoded as Partial<CursorMessage | CursorLeaveMessage>;
+  if (
+    typeof message.participantId !== "string" ||
+    message.participantId === currentState.you.id
+  ) {
+    return;
+  }
+  const participant = currentState.participants.find(
+    (person) => person.id === message.participantId,
+  );
+  if (!participant || participant.you) return;
+  if (message.type === "cursor-leave") {
+    fadeRemoteCursor(participant.id);
+    return;
+  }
+  if (
+    message.type !== "cursor" ||
+    typeof message.x !== "number" ||
+    typeof message.y !== "number" ||
+    !Number.isFinite(message.x) ||
+    !Number.isFinite(message.y) ||
+    message.x < 0 ||
+    message.x > 1 ||
+    message.y < 0 ||
+    message.y > 1
+  ) {
+    return;
+  }
+
+  const previous = remoteCursors.get(participant.id);
+  if (previous) {
+    clearTimeout(previous.staleTimer);
+    if (previous.removeTimer !== null) clearTimeout(previous.removeTimer);
+    previous.x = message.x;
+    previous.y = message.y;
+    previous.removeTimer = null;
+    previous.element?.classList.remove("stale");
+    if (previous.element) positionCursorElement(previous.element, message.x, message.y);
+    previous.staleTimer = setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS);
+    return;
+  }
+
+  const cursor: RemoteCursor = {
+    x: message.x,
+    y: message.y,
+    staleTimer: setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS),
+    removeTimer: null,
+    element: null,
+  };
+  remoteCursors.set(participant.id, cursor);
+  const layer = document.querySelector(".cursor-layer");
+  if (layer) {
+    cursor.element = cursorElement(participant, cursor);
+    layer.append(cursor.element);
+  }
+}
+
+function disconnectRelay(): void {
+  relayRoomId = null;
+  if (relayReconnectTimer !== null) clearTimeout(relayReconnectTimer);
+  relayReconnectTimer = null;
+  const socket = relaySocket;
+  relaySocket = null;
+  socket?.close();
+  clearRemoteCursors();
+}
+
+function connectRelay(roomId: string): void {
+  if (relayRoomId === roomId && relaySocket) return;
+  disconnectRelay();
+  relayRoomId = roomId;
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${location.host}/api/rooms/${roomId}/relay`);
+  relaySocket = socket;
+  socket.onmessage = (event) => receiveCursorFrame(event.data);
+  socket.onclose = () => {
+    if (relaySocket === socket) relaySocket = null;
+    clearRemoteCursors();
+    if (relayRoomId !== roomId) return;
+    relayReconnectTimer = setTimeout(() => {
+      relayReconnectTimer = null;
+      if (relayRoomId === roomId && relaySocket === null) {
+        relayRoomId = null;
+        connectRelay(roomId);
+      }
+    }, 1000);
+  };
+}
+
+function flushCursorPosition(): void {
+  cursorSendTimer = null;
+  const position = pendingCursor;
+  pendingCursor = null;
+  if (!position || !currentState || !relaySocket || relaySocket.readyState !== 1) return;
+  const message: CursorMessage = {
+    type: "cursor",
+    participantId: currentState.you.id,
+    x: position.x,
+    y: position.y,
+  };
+  relaySocket.send(JSON.stringify(message));
+  lastCursorSentAt = performance.now();
+}
+
+function sendCursorLeave(): void {
+  if (cursorSendTimer !== null) clearTimeout(cursorSendTimer);
+  cursorSendTimer = null;
+  pendingCursor = null;
+  if (!currentState || !relaySocket || relaySocket.readyState !== 1) return;
+  const message: CursorLeaveMessage = {
+    type: "cursor-leave",
+    participantId: currentState.you.id,
+  };
+  relaySocket.send(JSON.stringify(message));
+  lastCursorSentAt = performance.now();
+}
+
+function queueCursorPosition(plan: HTMLElement, event: PointerEvent): void {
+  const rect = plan.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  pendingCursor = {
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+  };
+  if (cursorSendTimer !== null) return;
+  const wait = Math.max(0, CURSOR_SEND_MS - (performance.now() - lastCursorSentAt));
+  if (wait === 0) {
+    flushCursorPosition();
+  } else {
+    cursorSendTimer = setTimeout(flushCursorPosition, wait);
+  }
+}
+
 function render(state: RoomStateView): void {
+  currentState = state;
   const root = document.getElementById("app")!;
   // A reader scrolled up in the chat keeps their place across the
   // re-render; only a log already at the bottom follows new messages.
@@ -240,16 +474,20 @@ function render(state: RoomStateView): void {
 
   const body = el("div", "body");
   const left = el("div", "left");
+  const planShell = el("div", "plan-shell");
   const plan = el("main", "plan");
   plan.id = "plan";
   plan.innerHTML = renderMarkdown(state.content);
-  left.append(plan);
+  const cursorLayer = el("div", "cursor-layer");
+  planShell.append(plan, cursorLayer);
+  left.append(planShell);
 
   const unanchored = renderInstructionMarks(plan, state);
   const lostIds = new Set(unanchored.map((instruction) => instruction.id));
 
   body.append(left, renderSidebar(state, plan, lostIds, chatScroll));
   root.append(bar, body);
+  renderRemoteCursors(state);
 
   if (state.status === "ended") {
     // Drop the selection handler from an earlier render, so no new
@@ -257,6 +495,8 @@ function render(state: RoomStateView): void {
     document.onmouseup = null;
   } else {
     wireComposer(plan, state);
+    plan.onpointermove = (event) => queueCursorPosition(plan, event);
+    plan.onpointerleave = sendCursorLeave;
   }
 }
 
@@ -831,11 +1071,15 @@ async function refresh(roomId: string): Promise<void> {
   if (document.querySelector(".composer, .inline-edit")) return;
   lastRendered = serialized;
   render(state);
+  if (state.status === "ended") disconnectRelay();
+  else connectRelay(roomId);
 }
 
 function start(roomId: string, state: RoomStateView): void {
   lastRendered = JSON.stringify(state);
   render(state);
+  if (state.status === "ended") disconnectRelay();
+  else connectRelay(roomId);
   if (pollTimer !== null) clearInterval(pollTimer);
   pollTimer = setInterval(() => refresh(roomId), POLL_MS);
 }
@@ -844,7 +1088,13 @@ function start(roomId: string, state: RoomStateView): void {
 // state a previous boot left behind.
 export function resetView(): void {
   if (pollTimer !== null) clearInterval(pollTimer);
+  if (cursorSendTimer !== null) clearTimeout(cursorSendTimer);
   pollTimer = null;
+  cursorSendTimer = null;
+  pendingCursor = null;
+  lastCursorSentAt = 0;
+  currentState = null;
+  disconnectRelay();
   lastRendered = "";
   pendingVerdict = "";
   stampMode = true;
