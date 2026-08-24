@@ -800,6 +800,7 @@ function renderSidebar(
   });
 
   if (!ended) {
+    const controls = el("div", "sidebar-controls");
     const composer = el("div", "message-composer");
     const input = el("textarea");
     input.placeholder = "Message the agent";
@@ -825,20 +826,17 @@ function renderSidebar(
     const queueButton = el("button", "queue-button", "Queue");
     queueButton.onclick = queueMessage;
     composer.append(input, queueButton);
-    side.append(composer);
-  }
-
-  if (!ended && (state.you.isHost || state.you.canSend)) {
-    side.append(renderSendControls(state));
+    controls.append(composer);
+    if (state.you.isHost || state.you.canSend) controls.append(renderSendControls(state));
+    side.append(controls);
   }
 
   return side;
 }
 
 function renderSendControls(state: RoomStateView): HTMLElement {
-  const box = el("section", "send");
+  const box = el("div", "send");
   const buttons = el("div", "sidebar-button-stack");
-  box.append(el("h2", undefined, "Send to agent"));
   const send = el("button", "send-button", "Send to agent");
   const note = el("p", "note");
   send.onclick = async () => {

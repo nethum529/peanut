@@ -239,9 +239,13 @@ describe("chat sidebar", () => {
     const send = doc.querySelector(".send-button");
     const end = doc.querySelector(".end-button");
     const stack = doc.querySelector(".sidebar-button-stack");
+    const controls = doc.querySelector(".sidebar-controls");
     expect(send?.textContent).toBe("Send to agent");
+    expect(doc.querySelector(".send h2")).toBeNull();
     expect(doc.querySelector(".send select")).toBeNull();
     expect(end?.textContent).toBe("End session");
+    expect(controls?.children[0]?.classList.contains("message-composer")).toBe(true);
+    expect(controls?.children[1]?.classList.contains("send")).toBe(true);
     expect(stack?.children[0] ?? null).toBe(send);
     expect(stack?.children[1] ?? null).toBe(end);
     expect(stack?.nextElementSibling?.classList.contains("note")).toBe(true);
@@ -256,6 +260,7 @@ describe("chat sidebar", () => {
     const insetRule =
       html.match(/\.message-composer,\s*\.sidebar-button-stack \{([^}]*)\}/)?.[1] ?? "";
     const composerRule = html.match(/\.message-composer \{([^}]*)\}/)?.[1] ?? "";
+    const controlsRule = html.match(/\.sidebar-controls \{([^}]*)\}/)?.[1] ?? "";
     const composerControlsRule =
       html.match(/\.message-composer textarea,\s*\.queue-button \{([^}]*)\}/)?.[1] ?? "";
     const actionStackRule =
@@ -267,6 +272,7 @@ describe("chat sidebar", () => {
     const endRule = html.match(/\.end-button \{([^}]*)\}/)?.[1] ?? "";
 
     expect(insetRule).toContain("padding-inline: 2px");
+    expect(controlsRule).toContain("gap: 8px");
     expect(composerRule).toContain("align-items: stretch");
     expect(composerControlsRule).toContain("height: 40px");
     expect(composerControlsRule).toContain("min-height: 40px");
