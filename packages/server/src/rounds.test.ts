@@ -301,6 +301,29 @@ describe("reply and end", () => {
     expect(view.rounds[0].reply.meta).toBe("tests: 18 passed");
   });
 
+  test("a reply over 100 words is refused and a shorter retry lands", async () => {
+    const { roomId, agentToken, hostCookie } = await setup();
+    await pin(roomId, hostCookie, "Do it.");
+    await flush(roomId, hostCookie);
+    const long = Array.from({ length: 101 }, (_, i) => `word${i}`).join(" ");
+    const refused = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ message: long }),
+    });
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).error).toBe("reply_too_long");
+    const exact = Array.from({ length: 100 }, (_, i) => `word${i}`).join(" ");
+    const accepted = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${agentToken}` },
+      body: JSON.stringify({ message: exact }),
+    });
+    expect(accepted.status).toBe(201);
+    const view = await state(roomId, hostCookie);
+    expect(view.rounds[0].reply.message).toBe(exact);
+  });
+
   test("a reply with no round is refused", async () => {
     const { roomId, agentToken } = await setup();
     const response = await fetch(`${server.url}/api/rooms/${roomId}/agent/reply`, {

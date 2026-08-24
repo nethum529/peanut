@@ -389,6 +389,7 @@ function statusFor(code: RoomError["code"]): number {
     case "bad_name":
     case "bad_instruction":
     case "empty_flush":
+    case "reply_too_long":
       return 400;
     case "bad_agent_token":
       return 401;

@@ -36,6 +36,20 @@ describe("formatRound", () => {
     expect(text).toContain('peanut reply');
   });
 
+  test("a chat instruction prints with no anchor context line", () => {
+    const text = formatRound({
+      status: "round",
+      round: 1,
+      instructions: [
+        { words: "Also cover timeouts.", author: { name: "Nethum" }, anchor: { type: "chat" } },
+      ],
+      next_step: "",
+    });
+    expect(text).toContain("1. [Nethum] Also cover timeouts.");
+    expect(text).not.toContain("on the block");
+    expect(text).not.toContain("on the text");
+  });
+
   test("a final round with a verdict says the review ended", () => {
     const text = formatRound({
       status: "round",
