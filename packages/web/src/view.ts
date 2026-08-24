@@ -66,6 +66,7 @@ const USERS_ICON =
   '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>' +
   '<path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 
+// The Lucide sun icon, verbatim (lucide.dev, ISC license).
 const SUN_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
   'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -75,6 +76,7 @@ const SUN_ICON =
   '<path d="M2 12h2"/><path d="M20 12h2"/>' +
   '<path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
 
+// The Lucide moon icon, verbatim (lucide.dev, ISC license).
 const MOON_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
   'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -96,7 +98,6 @@ function updateThemeToggle(button: HTMLButtonElement): void {
   button.innerHTML = dark ? SUN_ICON : MOON_ICON;
   const label = dark ? "Use light theme" : "Use dark theme";
   button.setAttribute("aria-label", label);
-  button.title = label;
   button.querySelector("svg")?.setAttribute("aria-hidden", "true");
   button.querySelector("svg")?.setAttribute("focusable", "false");
 }
