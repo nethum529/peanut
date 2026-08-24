@@ -725,10 +725,12 @@ describe("chat sidebar", () => {
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const bodyRule = html.match(/\.body \{([^}]*)\}/)?.[1] ?? "";
     const leftRule = html.match(/\.left \{([^}]*)\}/)?.[1] ?? "";
+    const planShellRule = html.match(/\.plan-shell \{([^}]*)\}/)?.[1] ?? "";
     const narrow = html.match(/@media \(max-width: 840px\) \{([\s\S]*?)\n      \}/)?.[1] ?? "";
 
     expect(bodyRule).toContain("grid-template-columns: minmax(0, 1fr) 320px");
     expect(leftRule).toContain("padding-inline: 24px");
+    expect(planShellRule).toContain("height: calc(100vh - 53px)");
     expect(html).toContain("border-inline-start: 1px solid var(--line)");
     expect(html).not.toContain("border-left: 1px solid var(--line)");
     expect(narrow).toContain("grid-template-columns: minmax(0, 1fr)");

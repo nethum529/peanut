@@ -74,6 +74,9 @@ describe("room document", () => {
     const html = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("content-security-policy")).toBe(
+      "sandbox allow-scripts allow-forms allow-popups",
+    );
     expect(html).toStartWith("<!doctype html>");
     expect(html).toContain("<title>Plan &lt;one&gt;</title>");
     expect(html).toContain("<h1>Plan</h1>");

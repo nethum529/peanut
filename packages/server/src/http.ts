@@ -151,7 +151,10 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     const roomId = documentMatch[1]!;
     store.participant(roomId, sessionFromCookie(request, roomId));
     return new Response(roomDocument(store.getRoom(roomId)), {
-      headers: { "content-type": "text/html; charset=utf-8" },
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "sandbox allow-scripts allow-forms allow-popups",
+      },
     });
   }
 
@@ -557,7 +560,7 @@ const MARKDOWN_DOCUMENT_STYLES = `
     margin: 28px auto;
     padding: 32px 40px;
     border: 1px solid var(--document-line);
-    border-radius: 8px;
+    border-radius: 12px;
     color: var(--document-ink);
     background: var(--document-surface);
     font-family: "Google Sans", system-ui, sans-serif;
@@ -573,6 +576,9 @@ const MARKDOWN_DOCUMENT_STYLES = `
   }
   body.plan code { font-size: 0.92em; }
   body.plan a { color: var(--document-accent); }
+  @media (max-width: 480px) {
+    body.plan { padding: 24px; }
+  }
 `;
 
 function roomDocument(room: Room): string {

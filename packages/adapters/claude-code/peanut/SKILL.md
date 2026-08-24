@@ -27,6 +27,14 @@ Markdown files render as a review document. Files with an `.html`
 or `.htm` extension are shared as-is, including their styles and
 scripts.
 
+Treat shared HTML as trusted local input. Its scripts run in the same
+sandboxed document realm as the Peanut overlay, so they can send valid
+overlay protocol messages as the viewer who opened the room. Message
+shape checks and server-side room permissions still apply. The iframe
+and document CSP use `allow-scripts allow-forms allow-popups` without
+`allow-same-origin`, so document scripts cannot read Peanut cookies or
+storage and cannot call the room API with the viewer's credentials.
+
 Add --tunnel when a reviewer is not on this machine; the command
 then also prints a public link.
 

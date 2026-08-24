@@ -15,6 +15,9 @@ import {
   type OverlayToChromeMessage,
 } from "./protocol.ts";
 
+// SPAN belongs with inline markup so word-level wrappers still stamp their
+// containing block. A document made only of spans therefore needs a block
+// ancestor before it has a stamp target.
 const INLINE_TAGS = new Set(["MARK", "STRONG", "EM", "CODE", "A", "SPAN"]);
 const NON_TARGET_TAGS = new Set(["SCRIPT", "STYLE", "LINK", "META", "NOSCRIPT"]);
 
@@ -84,6 +87,11 @@ export function createOverlayRuntime(
   let cursors: OverlayCursor[] = [];
   let hovered: HTMLElement | null = null;
   let markedStamps = new Map<HTMLElement, OverlayInstruction[]>();
+  const cursorNodes = new Map<string, HTMLElement>();
+  const originalBodyPosition = root.style.position;
+  const computedBodyPosition = view.getComputedStyle(root).position;
+  const positionedBody = !computedBodyPosition || computedBodyPosition === "static";
+  if (positionedBody) root.style.position = "relative";
 
   const send = (message: OverlayToChromeMessage): void => {
     if (expectedParentOrigin) host.postMessage(message, expectedParentOrigin);
@@ -95,6 +103,10 @@ export function createOverlayRuntime(
     );
   };
 
+  const closeCards = (): void => {
+    root.querySelectorAll(".card.peanut-overlay").forEach((node) => node.remove());
+  };
+
   const clearHover = (): void => {
     hovered?.classList.remove("stamp-hover");
     hovered = null;
@@ -102,9 +114,22 @@ export function createOverlayRuntime(
 
   const positionNear = (box: HTMLElement, target: HTMLElement): void => {
     const rect = target.getBoundingClientRect();
-    box.style.left = `${Math.max(8, rect.left + view.scrollX)}px`;
-    box.style.top = `${rect.bottom + view.scrollY + 6}px`;
     root.append(box);
+    const boxRect = box.getBoundingClientRect();
+    const viewportStart = view.scrollX + 8;
+    const viewportEnd = view.scrollX + view.innerWidth - boxRect.width - 8;
+    const desiredLeft = rect.left + view.scrollX;
+    const pageLeft = Math.max(viewportStart, Math.min(desiredLeft, viewportEnd));
+
+    const below = rect.bottom + view.scrollY + 8;
+    const above = rect.top + view.scrollY - boxRect.height - 8;
+    const viewportTop = view.scrollY + 8;
+    const viewportBottom = view.scrollY + view.innerHeight - 8;
+    const shouldPlaceAbove = below + boxRect.height > viewportBottom && above >= viewportTop;
+    const pageTop = shouldPlaceAbove ? above : below;
+    const rootRect = root.getBoundingClientRect();
+    box.style.left = `${pageLeft - (rootRect.left + view.scrollX)}px`;
+    box.style.top = `${pageTop - (rootRect.top + view.scrollY)}px`;
   };
 
   const canRemove = (instruction: OverlayInstruction): boolean => {
@@ -150,7 +175,9 @@ export function createOverlayRuntime(
 
   const renderMarks = (): void => {
     clearMarks();
-    closeFloating();
+    // Cards point at marks that are about to be rebuilt. A composer points
+    // at the underlying document and must keep the reviewer's typed text.
+    closeCards();
     const stamps = new Map<HTMLElement, OverlayInstruction[]>();
     for (const instruction of state.instructions) {
       if (instruction.anchor.type === "chat") continue;
@@ -192,10 +219,7 @@ export function createOverlayRuntime(
     markedStamps = stamps;
   };
 
-  const cursorNode = (
-    participant: OverlayParticipant,
-    cursor: OverlayCursor,
-  ): HTMLElement => {
+  const cursorNode = (participant: OverlayParticipant): HTMLElement => {
     const node = element(document, "div", "live-cursor peanut-overlay");
     node.dataset.participantId = participant.id;
     node.setAttribute("aria-hidden", "true");
@@ -204,24 +228,71 @@ export function createOverlayRuntime(
       '<svg viewBox="0 0 20 24" aria-hidden="true" focusable="false">' +
       '<path d="M2 1.5v17.8l4.4-4.2 3.6 7.4 3.7-1.8-3.6-7.2h6.1L2 1.5Z"/></svg>';
     node.append(element(document, "span", "cursor-name", participant.name));
+    return node;
+  };
+
+  const updateCursorNode = (
+    node: HTMLElement,
+    participant: OverlayParticipant,
+    cursor: OverlayCursor,
+  ): void => {
+    authorColor(node, participant.color, "peanut-author-cursor");
+    const name = node.querySelector(".cursor-name");
+    if (name) name.textContent = participant.name;
     node.style.left = `${cursor.x * 100}%`;
     node.style.top = `${cursor.y * 100}%`;
     node.classList.toggle("right-edge", cursor.x > 0.75);
     node.classList.toggle("bottom-edge", cursor.y > 0.9);
     node.classList.toggle("stale", cursor.stale);
-    return node;
   };
 
   const renderCursors = (): void => {
-    root.querySelector(".peanut-cursor-layer")?.remove();
-    if (cursors.length === 0) return;
-    const layer = element(document, "div", "peanut-cursor-layer peanut-overlay");
+    let layer = root.querySelector<HTMLElement>(".peanut-cursor-layer");
+    if (!layer) {
+      layer = element(document, "div", "peanut-cursor-layer peanut-overlay");
+      root.append(layer);
+      cursorNodes.clear();
+    }
     const participants = new Map(state.participants.map((person) => [person.id, person]));
+    const visible = new Set<string>();
     for (const cursor of cursors) {
       const participant = participants.get(cursor.participantId);
-      if (participant && !participant.you) layer.append(cursorNode(participant, cursor));
+      if (!participant || participant.you) continue;
+      visible.add(cursor.participantId);
+      let node = cursorNodes.get(cursor.participantId);
+      if (!node) {
+        node = cursorNode(participant);
+        cursorNodes.set(cursor.participantId, node);
+        layer.append(node);
+      }
+      updateCursorNode(node, participant, cursor);
     }
-    root.append(layer);
+    for (const [participantId, node] of cursorNodes) {
+      if (visible.has(participantId)) continue;
+      node.remove();
+      cursorNodes.delete(participantId);
+    }
+  };
+
+  const snapshotHtml = (): string => {
+    const clone = root.cloneNode(true) as HTMLElement;
+    clone
+      .querySelectorAll(
+        '.peanut-overlay, link[href="/overlay.css"], script[src="/overlay.js"]',
+      )
+      .forEach((node) => node.remove());
+    clone.querySelectorAll("mark.pin[data-instruction-id]").forEach((mark) => {
+      const parent = mark.parentNode;
+      mark.replaceWith(...mark.childNodes);
+      parent?.normalize();
+    });
+    clone.querySelectorAll("[data-peanut-stamped]").forEach((node) => {
+      node.classList.remove("stamped", "peanut-author-outline");
+      delete (node as HTMLElement).dataset.peanutStamped;
+      (node as HTMLElement).style.removeProperty("--peanut-author-color");
+    });
+    clone.querySelectorAll(".stamp-hover").forEach((node) => node.classList.remove("stamp-hover"));
+    return clone.innerHTML;
   };
 
   const openComposer = (anchor: StampAnchor, target: HTMLElement): void => {
@@ -305,7 +376,10 @@ export function createOverlayRuntime(
     const message = event.data;
     if (message.type === "state") {
       state = message;
-      if (state.ended) clearHover();
+      if (state.ended) {
+        clearHover();
+        closeFloating();
+      }
       renderMarks();
       renderCursors();
     } else if (message.type === "cursors") {
@@ -314,7 +388,7 @@ export function createOverlayRuntime(
     } else if (message.type === "theme") {
       document.documentElement.dataset.theme = message.theme;
     } else {
-      send({ type: "snapshot", requestId: message.requestId, html: root.innerHTML });
+      send({ type: "snapshot", requestId: message.requestId, html: snapshotHtml() });
     }
   };
 
@@ -339,6 +413,8 @@ export function createOverlayRuntime(
       closeFloating();
       clearMarks();
       root.querySelector(".peanut-cursor-layer")?.remove();
+      cursorNodes.clear();
+      if (positionedBody) root.style.position = originalBodyPosition;
     },
   };
 }
