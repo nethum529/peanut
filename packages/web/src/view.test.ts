@@ -275,7 +275,8 @@ describe("chat sidebar", () => {
     expect(html).not.toContain(".bubble:focus-within .bubble-actions");
     expect(html).not.toContain(".bubble:hover .bubble-actions");
     expect(html).not.toContain("@media (hover: none)");
-    expect(actionsRule).toContain("margin-left: auto");
+    expect(actionsRule).toContain("margin-inline-start: auto");
+    expect(actionsRule).not.toContain("margin-left");
     expect(actionsRule).not.toContain("opacity");
     expect(actionsRule).not.toContain("pointer-events");
     expect(actionRule).toContain("border: 0");
@@ -478,6 +479,7 @@ describe("chat sidebar", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.querySelector(".person-name")?.textContent).toBe("Nethum");
     expect(rows[0]?.querySelector(".person-tag")).toBeNull();
+    expect(icon?.closest(".toolbar-actions")?.querySelector(".theme-toggle")).not.toBeNull();
 
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const peopleRule = html.match(/\.people \{([^}]*)\}/)?.[1] ?? "";
@@ -500,13 +502,15 @@ describe("chat sidebar", () => {
       )?.[1] ?? "";
     expect(peopleRule).toContain("--people-menu-open-delay: 500ms");
     expect(menuRule).toContain("padding-top: 8px");
-    expect(menuRule).toContain(
-      "transition: opacity 160ms ease 300ms, visibility 0s linear 460ms",
-    );
+    expect(menuRule).toContain("transition: visibility 0s linear 300ms");
+    expect(menuRule).not.toContain("transition: opacity");
     expect(delayedOpenRule).toContain(
-      "transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear",
+      "transition: visibility 0s linear var(--people-menu-open-delay)",
     );
-    expect(immediateOpenRule).toContain("transition: opacity 160ms ease");
+    expect(immediateOpenRule).toContain("transition: visibility 0s linear 0s");
+    expect(html).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\.people:hover \.people-menu,[\s\S]*?transition: opacity 160ms ease var\(--people-menu-open-delay\), visibility 0s linear;/,
+    );
     expect(tooltipWindowRule).toContain(
       "animation: hide-people-tooltip 1ms linear var(--people-menu-open-delay) forwards",
     );
@@ -651,6 +655,19 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".permission-switch")).toBeNull();
   });
 
+  test("the room layout stacks at its content breakpoint and keeps logical margins", async () => {
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const bodyRule = html.match(/\.body \{([^}]*)\}/)?.[1] ?? "";
+    const leftRule = html.match(/\.left \{([^}]*)\}/)?.[1] ?? "";
+    const narrow = html.match(/@media \(max-width: 840px\) \{([\s\S]*?)\n      \}/)?.[1] ?? "";
+
+    expect(bodyRule).toContain("grid-template-columns: minmax(0, 1fr) 320px");
+    expect(leftRule).toContain("padding-inline: 24px");
+    expect(html).toContain("border-inline-start: 1px solid var(--line)");
+    expect(html).not.toContain("border-left: 1px solid var(--line)");
+    expect(narrow).toContain("grid-template-columns: minmax(0, 1fr)");
+  });
+
   test("theme starts dark and the sun toggle saves a light choice", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const toggle = doc.querySelector(".theme-toggle") as HTMLButtonElement;
@@ -660,22 +677,45 @@ describe("chat sidebar", () => {
     expect(toggle.classList.contains("icon-tooltip")).toBe(true);
     expect(toggle.classList.contains("icon-tooltip-below")).toBe(true);
     expect(toggle.classList.contains("icon-tooltip-end")).toBe(true);
-    expect(toggle.querySelector("circle")?.getAttribute("r")).toBe("4");
-    expect(toggle.querySelector("svg")?.getAttribute("stroke")).toBe("currentColor");
+    expect(toggle.dataset.theme).toBe("dark");
+    expect(toggle.querySelectorAll("svg")).toHaveLength(2);
+    expect(toggle.querySelector(".theme-icon-sun circle")?.getAttribute("r")).toBe("4");
+    expect(toggle.querySelector(".theme-icon-sun svg")?.getAttribute("stroke")).toBe(
+      "currentColor",
+    );
 
     const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
     const endRule = html.match(/\.icon-tooltip-end::after \{([^}]*)\}/)?.[1] ?? "";
-    expect(endRule).toContain("right: 0");
-    expect(endRule).toContain("left: auto");
+    expect(endRule).toContain("inset-inline-end: 0");
+    expect(endRule).toContain("inset-inline-start: auto");
     expect(endRule).toContain("transform: translateY(2px)");
     expect(html).not.toContain(".icon-tooltip-end::before");
+    expect(html).toContain(
+      ".icon-tooltip-end:dir(rtl)::after { transform-origin: bottom left; }",
+    );
+    expect(html).toContain(
+      ".icon-tooltip-below.icon-tooltip-end:dir(rtl)::after { transform-origin: top left; }",
+    );
 
     click(toggle);
 
     expect(doc.documentElement.dataset.theme).toBe("light");
     expect(win.localStorage.getItem("theme")).toBe("light");
     expect(toggle.getAttribute("aria-label")).toBe("Use dark theme");
-    expect(toggle.querySelector("circle")).toBeNull();
+    expect(toggle.dataset.theme).toBe("light");
+    expect(toggle.querySelector(".theme-icon-moon path")?.getAttribute("d")).toContain(
+      "M20.985 12.486",
+    );
+    const transitionGuard = doc.head.querySelector(
+      "style[data-theme-transition-guard]",
+    ) as HTMLStyleElement;
+    expect(transitionGuard.textContent).toBe(
+      "*,*::before,*::after{transition:none !important}",
+    );
+    await new Promise<void>((resolve) => {
+      win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve()));
+    });
+    expect(doc.head.querySelector("style[data-theme-transition-guard]")).toBeNull();
   });
 
   test("a saved light choice wins when the room opens", async () => {
@@ -684,7 +724,10 @@ describe("chat sidebar", () => {
 
     expect(doc.documentElement.dataset.theme).toBe("light");
     expect(toggle.getAttribute("aria-label")).toBe("Use dark theme");
-    expect(toggle.querySelector("path")?.getAttribute("d")).toContain("M20.985 12.486");
+    expect(toggle.dataset.theme).toBe("light");
+    expect(toggle.querySelector(".theme-icon-moon path")?.getAttribute("d")).toContain(
+      "M20.985 12.486",
+    );
   });
 
   test("the page applies the saved theme before its styles", async () => {
@@ -710,7 +753,17 @@ describe("chat sidebar", () => {
     expect(doc.querySelector(".stamp-toggle")).toBeNull();
     const para = doc.querySelector("#plan p")!;
     click(para);
-    expect(doc.querySelector(".composer")).not.toBeNull();
+    const composer = doc.querySelector(".composer");
+    expect(composer).not.toBeNull();
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    const viewSource = await Bun.file(new URL("./view.ts", import.meta.url)).text();
+    const popoverRule = html.match(/\.composer, \.card \{([^}]*)\}/)?.[1] ?? "";
+    const inputRule = html.match(/\.composer input \{([^}]*)\}/)?.[1] ?? "";
+    expect(popoverRule).toContain("border-radius: 14px");
+    expect(inputRule).toContain("font-size: 14px");
+    expect(viewSource).toContain('const viewportTop = window.scrollY + toolbarHeight + 8;');
+
     click(doc.querySelector(".sidebar")!);
     expect(doc.querySelector(".composer")).toBeNull();
   });

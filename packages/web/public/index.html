@@ -85,6 +85,11 @@
         --author-lighten: 0%;
       }
       * { box-sizing: border-box; }
+      button, input, textarea { font: inherit; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible {
+        outline: 2px solid var(--accent-text);
+        outline-offset: 2px;
+      }
       body {
         margin: 0;
         font-family: "Google Sans", system-ui, sans-serif;
@@ -92,15 +97,21 @@
         background: var(--paper);
       }
       .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
         display: flex;
         align-items: center;
         gap: 16px;
-        padding: 10px 20px;
+        min-height: 53px;
+        padding-block: 10px;
+        padding-inline: 20px;
         background: var(--surface);
         border-bottom: 1px solid var(--line);
       }
       .wordmark { font-weight: 700; color: var(--accent-text); }
-      .title { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .title { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .toolbar-actions { display: flex; align-items: center; gap: 4px; }
       .people {
         --people-menu-open-delay: 500ms;
         position: relative;
@@ -109,14 +120,20 @@
       .people-icon {
         display: grid;
         place-items: center;
-        padding: 4px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
         border: 0;
+        border-radius: 6px;
         background: transparent;
         color: var(--muted);
         cursor: pointer;
       }
       .people-icon svg { width: 20px; height: 20px; }
-      .people:hover .people-icon { color: var(--accent-text); }
+      .people:hover .people-icon, .people:focus-within .people-icon {
+        background: var(--paper);
+        color: var(--accent-text);
+      }
       @keyframes hide-people-tooltip {
         to { opacity: 0; visibility: hidden; }
       }
@@ -135,6 +152,7 @@
         visibility: hidden;
       }
       .theme-toggle {
+        position: relative;
         width: 32px;
         height: 32px;
         display: grid;
@@ -146,9 +164,26 @@
         color: var(--muted);
         cursor: pointer;
       }
-      .theme-toggle:hover { color: var(--accent-text); }
-      .theme-toggle:focus-visible { outline-offset: 2px; }
+      .theme-toggle:hover, .theme-toggle:focus-visible {
+        background: var(--paper);
+        color: var(--accent-text);
+      }
       .theme-toggle svg { width: 20px; height: 20px; }
+      .theme-icon {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        opacity: 0;
+        scale: 0.25;
+        filter: blur(4px);
+      }
+      .theme-toggle[data-theme="dark"] .theme-icon-sun,
+      .theme-toggle[data-theme="light"] .theme-icon-moon {
+        opacity: 1;
+        scale: 1;
+        filter: blur(0);
+      }
       /* Hover intent without scripts: the fade is an opacity
          transition, the exit timer is its delay, and visibility flips
          after the fade so a hidden menu takes no hover. The top
@@ -157,29 +192,29 @@
       .people-menu {
         position: absolute;
         top: 100%;
-        right: -8px;
+        inset-inline-end: -8px;
         padding-top: 8px;
         opacity: 0;
         visibility: hidden;
-        transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
+        transition: visibility 0s linear 300ms;
         z-index: 20;
       }
       .people:hover .people-menu,
       .people:focus-within .people-menu {
         opacity: 1;
         visibility: visible;
-        transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear;
+        transition: visibility 0s linear var(--people-menu-open-delay);
       }
       .people .people-menu:hover,
       .people .people-menu:focus-within {
         opacity: 1;
         visibility: visible;
-        transition: opacity 160ms ease;
+        transition: visibility 0s linear 0s;
       }
       .people-panel {
         background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 10px;
+        border-radius: 12px;
         box-shadow: 0 4px 14px var(--shadow);
         padding: 8px;
         min-width: 170px;
@@ -189,7 +224,7 @@
       }
       .person-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 14px; white-space: nowrap; }
       .person-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
-      .person-name { margin-right: auto; }
+      .person-name { margin-inline-end: auto; }
       .permission-switch {
         position: relative;
         display: inline-flex;
@@ -226,22 +261,23 @@
       }
       .body {
         display: grid;
-        grid-template-columns: 1fr 320px;
-        gap: 0 20px;
+        grid-template-columns: minmax(0, 1fr) 320px;
         align-items: start;
       }
+      .left { min-width: 0; padding-inline: 24px; }
       .sidebar {
         position: sticky;
-        top: 0;
-        max-height: 100vh;
+        top: 53px;
+        height: calc(100vh - 53px);
+        max-height: calc(100vh - 53px);
         overflow-y: auto;
         padding: 16px;
         display: flex;
         flex-direction: column;
         gap: 16px;
         background: var(--surface);
-        border-left: 1px solid var(--line);
-        min-height: calc(100vh - 45px);
+        border-inline-start: 1px solid var(--line);
+        min-height: calc(100vh - 53px);
       }
       .sidebar h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 8px; }
       .sidebar ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -273,7 +309,7 @@
       .bubble .hint { font-size: 12px; opacity: 0.75; }
       .bubble.user {
         align-self: flex-end;
-        border-bottom-right-radius: 4px;
+        border-end-end-radius: 4px;
         background: var(--surface);
         border: 1.5px solid var(--line);
       }
@@ -284,7 +320,7 @@
       }
       .bubble.agent {
         align-self: flex-start;
-        border-bottom-left-radius: 4px;
+        border-end-start-radius: 4px;
         background: var(--paper);
         border: 1px solid var(--line);
       }
@@ -300,7 +336,7 @@
       .bubble-actions {
         display: flex;
         gap: 4px;
-        margin-left: auto;
+        margin-inline-start: auto;
       }
       .bubble.editing .bubble-footer { display: none; }
       .bubble-action {
@@ -309,17 +345,24 @@
         width: 24px;
         height: 24px;
         border: 0;
+        border-radius: 6px;
         background: transparent;
         color: var(--muted);
         cursor: pointer;
         padding: 0;
         touch-action: manipulation;
       }
-      .bubble-action:hover, .bubble-action:focus-visible { color: var(--accent-text); }
+      .bubble-action:hover, .bubble-action:focus-visible {
+        background: var(--paper);
+        color: var(--accent-text);
+      }
       .bubble.user.mine .bubble-action { color: var(--on-accent); opacity: 0.8; }
       .bubble.user.mine .bubble-action:hover,
-      .bubble.user.mine .bubble-action:focus-visible { opacity: 1; }
-      .bubble-action:focus-visible { outline-offset: 2px; }
+      .bubble.user.mine .bubble-action:focus-visible {
+        background: var(--on-accent);
+        color: var(--accent);
+        opacity: 1;
+      }
       .bubble-action svg { width: 16px; height: 16px; }
       .icon-tooltip { position: relative; }
       .icon-tooltip::before, .icon-tooltip::after {
@@ -363,8 +406,8 @@
         transform-origin: top center;
       }
       .icon-tooltip-end::after {
-        right: 0;
-        left: auto;
+        inset-inline-end: 0;
+        inset-inline-start: auto;
         transform: translateY(2px) scale(0.95);
         transform-origin: bottom right;
       }
@@ -372,9 +415,11 @@
         transform: translateY(-2px) scale(0.95);
         transform-origin: top right;
       }
+      .icon-tooltip-end:dir(rtl)::after { transform-origin: bottom left; }
+      .icon-tooltip-below.icon-tooltip-end:dir(rtl)::after { transform-origin: top left; }
       .bubble-action:last-child::after {
-        right: 0;
-        left: auto;
+        inset-inline-end: 0;
+        inset-inline-start: auto;
         transform: translateY(2px) scale(0.95);
         transform-origin: bottom right;
       }
@@ -400,6 +445,27 @@
         transform: translateY(0) scale(1);
       }
       @media (prefers-reduced-motion: no-preference) {
+        .people-menu {
+          transition: opacity 160ms ease 300ms, visibility 0s linear 460ms;
+        }
+        .people:hover .people-menu,
+        .people:focus-within .people-menu {
+          transition: opacity 160ms ease var(--people-menu-open-delay), visibility 0s linear;
+        }
+        .people .people-menu:hover,
+        .people .people-menu:focus-within {
+          transition: opacity 160ms ease;
+        }
+        .theme-icon {
+          transition-property: opacity, filter, scale;
+          transition-duration: 300ms;
+          transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+        }
+        .bubble-action {
+          transition-property: color, background-color;
+          transition-duration: 100ms;
+          transition-timing-function: ease-out;
+        }
         .icon-tooltip::before, .icon-tooltip::after {
           transition-property: opacity, transform, visibility;
           transition-duration: 100ms, 100ms, 0ms;
@@ -427,7 +493,7 @@
         resize: vertical;
         padding: 5px 7px;
         border: 1px solid var(--line);
-        border-radius: 4px;
+        border-radius: 6px;
         background: var(--surface);
         color: var(--ink);
         font: inherit;
@@ -462,6 +528,7 @@
         font-size: 14px;
       }
       .queue-button {
+        min-height: 38px;
         padding: 9px 14px;
         border: 1px solid var(--accent-border);
         border-radius: 10px;
@@ -482,7 +549,7 @@
         width: 100%;
         padding: 10px;
         border: 1px solid var(--accent-border);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--accent);
         color: var(--on-accent);
         font-size: 15px;
@@ -492,7 +559,7 @@
       .end-button {
         padding: 8px;
         border: 1px solid var(--danger);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--surface);
         color: var(--danger);
         cursor: pointer;
@@ -500,7 +567,8 @@
       }
       .plan-shell {
         max-width: 760px;
-        margin: 28px auto;
+        margin-block: 28px;
+        margin-inline: auto;
         position: relative;
       }
       .plan {
@@ -509,7 +577,7 @@
         padding: 32px 40px;
         background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 12px;
         line-height: 1.6;
       }
       .cursor-layer {
@@ -632,30 +700,35 @@
         display: flex;
         gap: 8px;
         align-items: center;
+        max-width: calc(100vw - 16px);
         padding: 8px;
         background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 6px;
-        box-shadow: 0 4px 14px var(--shadow);
+        border-radius: 14px;
+        box-shadow: 0 8px 24px var(--shadow);
         z-index: 10;
       }
+      .card { flex-direction: column; align-items: stretch; }
       .composer input {
         width: 260px;
+        min-width: 0;
         padding: 6px 8px;
         border: 1px solid var(--line);
-        border-radius: 4px;
+        border-radius: 6px;
         background: var(--surface);
         color: var(--ink);
+        font-size: 14px;
       }
       .composer button, .remove {
         padding: 6px 10px;
         border: 1px solid var(--accent-border);
-        border-radius: 4px;
+        border-radius: 6px;
         background: var(--accent);
         color: var(--on-accent);
         cursor: pointer;
       }
       .instruction { display: flex; gap: 8px; align-items: baseline; }
+      .instruction .words { overflow-wrap: anywhere; }
       .instruction .author { font-weight: 600; }
       .author-text {
         color: color-mix(in srgb, var(--author-color), white var(--author-lighten));
@@ -679,6 +752,26 @@
         text-align: center;
         color: var(--muted);
         padding-bottom: 32px;
+      }
+      @media (max-width: 840px) {
+        .body { grid-template-columns: minmax(0, 1fr); }
+        .left { padding-inline: 20px; }
+        .plan-shell { margin-block: 20px; }
+        .sidebar {
+          position: static;
+          height: auto;
+          max-height: none;
+          min-height: auto;
+          padding: 20px;
+          border-block-start: 1px solid var(--line);
+          border-inline-start: 0;
+        }
+      }
+      @media (max-width: 480px) {
+        .toolbar { gap: 12px; padding-inline: 16px; }
+        .left { padding-inline: 16px; }
+        .plan { padding: 24px; }
+        .sidebar { padding: 16px; }
       }
     </style>
   </head>

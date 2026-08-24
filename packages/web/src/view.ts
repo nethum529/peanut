@@ -117,25 +117,40 @@ function initializeTheme(): void {
 
 function updateThemeToggle(button: HTMLButtonElement): void {
   const dark = currentTheme() === "dark";
-  button.innerHTML = dark ? SUN_ICON : MOON_ICON;
+  button.dataset.theme = dark ? "dark" : "light";
   const label = dark ? "Use light theme" : "Use dark theme";
   button.setAttribute("aria-label", label);
-  button.querySelector("svg")?.setAttribute("aria-hidden", "true");
-  button.querySelector("svg")?.setAttribute("focusable", "false");
+  for (const svg of button.querySelectorAll("svg")) {
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+  }
 }
 
 function renderThemeToggle(): HTMLButtonElement {
-  const button = iconButton(
-    "Use light theme",
-    SUN_ICON,
-    "theme-toggle icon-tooltip-below icon-tooltip-end",
+  const button = el(
+    "button",
+    "theme-toggle icon-tooltip icon-tooltip-below icon-tooltip-end",
   );
+  button.type = "button";
+  button.innerHTML =
+    `<span class="theme-icon theme-icon-sun">${SUN_ICON}</span>` +
+    `<span class="theme-icon theme-icon-moon">${MOON_ICON}</span>`;
   updateThemeToggle(button);
   button.onclick = () => {
+    const transitionGuard = document.createElement("style");
+    transitionGuard.dataset.themeTransitionGuard = "";
+    transitionGuard.textContent = "*,*::before,*::after{transition:none !important}";
+    document.head.append(transitionGuard);
+
     const theme = currentTheme() === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("theme", theme);
     updateThemeToggle(button);
+
+    void document.body.offsetHeight;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => transitionGuard.remove());
+    });
   };
   return button;
 }
@@ -453,7 +468,9 @@ function render(state: RoomStateView): void {
   }
   menu.append(panel);
   people.append(icon, menu);
-  bar.append(brand, title, people, renderThemeToggle());
+  const toolbarActions = el("div", "toolbar-actions");
+  toolbarActions.append(people, renderThemeToggle());
+  bar.append(brand, title, toolbarActions);
 
   const body = el("div", "body");
   const left = el("div", "left");
@@ -999,9 +1016,20 @@ function wireComposer(plan: HTMLElement, state: RoomStateView): void {
 function positionNear(box: HTMLElement, target: HTMLElement): void {
   const rect = target.getBoundingClientRect();
   box.style.position = "absolute";
-  box.style.left = `${Math.max(8, rect.left + window.scrollX)}px`;
-  box.style.top = `${rect.bottom + window.scrollY + 6}px`;
   document.body.append(box);
+  const boxRect = box.getBoundingClientRect();
+  const viewportStart = window.scrollX + 8;
+  const viewportEnd = window.scrollX + window.innerWidth - boxRect.width - 8;
+  const desiredLeft = rect.left + window.scrollX;
+  box.style.left = `${Math.max(viewportStart, Math.min(desiredLeft, viewportEnd))}px`;
+
+  const below = rect.bottom + window.scrollY + 8;
+  const above = rect.top + window.scrollY - boxRect.height - 8;
+  const toolbarHeight = document.querySelector<HTMLElement>(".toolbar")?.offsetHeight ?? 0;
+  const viewportTop = window.scrollY + toolbarHeight + 8;
+  const viewportBottom = window.scrollY + window.innerHeight - 8;
+  const shouldPlaceAbove = below + boxRect.height > viewportBottom && above >= viewportTop;
+  box.style.top = `${shouldPlaceAbove ? above : below}px`;
 }
 
 async function refresh(roomId: string): Promise<void> {
