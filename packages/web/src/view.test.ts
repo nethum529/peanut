@@ -167,6 +167,8 @@ describe("chat sidebar", () => {
 
     const queued = doc.querySelector(".bubble.user.queued");
     expect(queued?.textContent).toContain("Also cover timeouts.");
+    expect(doc.querySelector(".send select")).toBeNull();
+    expect(doc.querySelector(".end-button")?.textContent).toBe("End session");
 
     await realFetch(`${server.url}/api/rooms/${roomId}/instructions`, {
       method: "POST",
@@ -189,6 +191,17 @@ describe("chat sidebar", () => {
     const view = await state.json();
     expect(view.rounds[0].instructions[0].words).toBe("Also cover timeouts.");
     expect(view.rounds[0].instructions[1].anchor.guard).toBe("first paragraph");
+    expect(view.rounds[0].verdict).toBeUndefined();
+  });
+
+  test("send controls omit the verdict select and its styles", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    expect(doc.querySelector(".send-button")?.textContent).toBe("Send to agent");
+    expect(doc.querySelector(".send select")).toBeNull();
+    expect(doc.querySelector(".end-button")?.textContent).toBe("End session");
+
+    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
+    expect(html).not.toContain(".send select");
   });
 
   test("queued icon buttons use the shared tooltip class and accessible labels", async () => {

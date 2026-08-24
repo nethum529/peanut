@@ -160,9 +160,6 @@ const remoteCursors = new Map<string, RemoteCursor>();
 // current choice. It starts on: block stamping is the main gesture,
 // and text selection pinning is one toggle away.
 let stampMode = true;
-// The host's chosen verdict also survives the re-renders between
-// choosing and pressing Send.
-let pendingVerdict = "";
 
 function roomIdFromPath(): string {
   return location.pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -763,23 +760,6 @@ function renderSidebar(
 function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElement {
   const box = el("section", "send");
   box.append(el("h2", undefined, "Send to agent"));
-  if (state.you.isHost) {
-    const select = el("select");
-    for (const [value, label] of [
-      ["", "No verdict"],
-      ["approve", "Approve"],
-      ["request_changes", "Request changes"],
-    ] as const) {
-      const option = el("option", undefined, label);
-      option.value = value;
-      select.append(option);
-    }
-    select.value = pendingVerdict;
-    select.onchange = () => {
-      pendingVerdict = select.value;
-    };
-    box.append(select);
-  }
   const send = el("button", "send-button", "Send to agent");
   const note = el("p", "note");
   send.onclick = async () => {
@@ -787,10 +767,8 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
     const response = await postJson(`/api/rooms/${state.id}/flush`, {
       domSnapshot: plan.innerHTML,
       nextStep: "",
-      ...(pendingVerdict ? { verdict: pendingVerdict } : {}),
     });
     if (response.ok) {
-      pendingVerdict = "";
       refresh(state.id);
       return;
     }
@@ -798,7 +776,7 @@ function renderSendControls(state: RoomStateView, plan: HTMLElement): HTMLElemen
     if (body.error === "round_pending") {
       note.textContent = "The agent has not picked up the last round yet.";
     } else if (body.error === "empty_flush") {
-      note.textContent = "Queue a message or choose a verdict first.";
+      note.textContent = "Queue a message first.";
     } else {
       note.textContent = body.message ?? "Could not send.";
     }
@@ -1074,7 +1052,6 @@ export function resetView(): void {
   currentState = null;
   disconnectRelay();
   lastRendered = "";
-  pendingVerdict = "";
   stampMode = true;
   hovered = null;
 }
