@@ -56,6 +56,16 @@ interface RoomStateView {
 
 const POLL_MS = 2000;
 
+// The Lucide users icon, verbatim (lucide.dev, ISC license). The
+// toolbar shows it in place of participant chips.
+const USERS_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>' +
+  '<circle cx="9" cy="7" r="4"/>' +
+  '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>' +
+  '<path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+
 let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 // Stamp mode lives outside render, so a state refresh keeps the
@@ -145,13 +155,21 @@ function render(state: RoomStateView): void {
   const brand = el("span", "wordmark", "Peanut");
   const title = el("span", "title", state.title || "Untitled review");
   const people = el("div", "people");
+  const icon = el("span", "people-icon");
+  icon.innerHTML = USERS_ICON;
+  const menu = el("div", "people-menu");
+  const panel = el("div", "people-panel");
   for (const participant of state.participants) {
-    const chip = el("span", "person", participant.name);
-    chip.style.borderColor = participant.color;
-    if (participant.you) chip.classList.add("you");
-    if (participant.isHost) chip.title = "Host";
-    people.append(chip);
+    const row = el("div", "person-row");
+    const dot = el("span", "person-dot");
+    dot.style.background = participant.color;
+    row.append(dot, el("span", "person-name", participant.name));
+    if (participant.you) row.append(el("span", "person-tag", "you"));
+    if (participant.isHost) row.append(el("span", "person-tag", "host"));
+    panel.append(row);
   }
+  menu.append(panel);
+  people.append(icon, menu);
   bar.append(brand, title, people);
   if (state.status !== "ended") {
     const stamp = el("button", "stamp-toggle", "Stamp");
