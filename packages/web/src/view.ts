@@ -529,9 +529,7 @@ function render(state: RoomStateView): void {
   } else {
     const body = el("div", "body");
     const left = el("div", "left");
-    const planShell = el("div", "plan-shell");
-    planShell.append(ensurePlanFrame(state.id));
-    left.append(planShell);
+    left.append(ensurePlanFrame(state.id));
     body.append(left, sidebar);
     root.replaceChildren(bar, body);
   }
