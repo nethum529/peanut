@@ -66,6 +66,59 @@ const USERS_ICON =
   '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>' +
   '<path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 
+const SUN_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="4"/>' +
+  '<path d="M12 2v2"/><path d="M12 20v2"/>' +
+  '<path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>' +
+  '<path d="M2 12h2"/><path d="M20 12h2"/>' +
+  '<path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+
+const MOON_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" ' +
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>';
+
+type Theme = "dark" | "light";
+
+function currentTheme(): Theme {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+
+function initializeTheme(): void {
+  const saved = window.localStorage.getItem("theme");
+  document.documentElement.dataset.theme = saved === "light" ? "light" : "dark";
+}
+
+function updateThemeToggle(button: HTMLButtonElement): void {
+  const dark = currentTheme() === "dark";
+  button.innerHTML = dark ? SUN_ICON : MOON_ICON;
+  const label = dark ? "Use light theme" : "Use dark theme";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.querySelector("svg")?.setAttribute("aria-hidden", "true");
+  button.querySelector("svg")?.setAttribute("focusable", "false");
+}
+
+function renderThemeToggle(): HTMLButtonElement {
+  const button = el("button", "theme-toggle");
+  button.type = "button";
+  updateThemeToggle(button);
+  button.onclick = () => {
+    const theme = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("theme", theme);
+    updateThemeToggle(button);
+  };
+  return button;
+}
+
+function setAuthorColor(node: HTMLElement, color: string, className: string): void {
+  node.classList.add(className);
+  node.style.setProperty("--author-color", color);
+}
+
 let lastRendered = "";
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 // Stamp mode lives outside render, so a state refresh keeps the
@@ -162,7 +215,7 @@ function render(state: RoomStateView): void {
   for (const participant of state.participants) {
     const row = el("div", "person-row");
     const dot = el("span", "person-dot");
-    dot.style.background = participant.color;
+    setAuthorColor(dot, participant.color, "author-dot");
     row.append(dot, el("span", "person-name", participant.name));
     if (participant.you) row.append(el("span", "person-tag", "you"));
     if (participant.isHost) row.append(el("span", "person-tag", "host"));
@@ -170,7 +223,7 @@ function render(state: RoomStateView): void {
   }
   menu.append(panel);
   people.append(icon, menu);
-  bar.append(brand, title, people);
+  bar.append(brand, title, people, renderThemeToggle());
   if (state.status !== "ended") {
     const stamp = el("button", "stamp-toggle", "Stamp");
     if (stampMode) stamp.classList.add("on");
@@ -281,12 +334,12 @@ function userBubble(
   const bubble = el("div", "bubble user", undefined);
   if (!mine) {
     const who = el("span", "who", author.name);
-    who.style.color = author.color;
+    setAuthorColor(who, author.color, "author-text");
     bubble.append(who);
   }
   bubble.append(el("span", "words", words));
   if (hint) bubble.append(el("span", "hint", hint));
-  if (!mine) bubble.style.borderColor = author.color;
+  if (!mine) setAuthorColor(bubble, author.color, "author-border");
   if (mine) bubble.classList.add("mine");
   return bubble;
 }
@@ -554,7 +607,7 @@ function renderPermissions(state: RoomStateView): HTMLElement {
       refresh(state.id);
     };
     const name = el("span", undefined, guest.name);
-    name.style.color = guest.color;
+    setAuthorColor(name, guest.color, "author-text");
     row.append(toggle, name);
     box.append(row);
   }
@@ -594,7 +647,7 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
       const mark = document.createElement("mark");
       mark.className = "pin";
       mark.dataset.instructionId = instruction.id;
-      mark.style.textDecorationColor = instruction.author.color;
+      setAuthorColor(mark, instruction.author.color, "author-mark");
       node.parentNode?.replaceChild(mark, node);
       mark.append(node);
       mark.onclick = (event) => {
@@ -606,7 +659,7 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
   for (const [target, list] of stamps) {
     const element = target as HTMLElement;
     element.classList.add("stamped");
-    element.style.outlineColor = list[list.length - 1]!.author.color;
+    setAuthorColor(element, list[list.length - 1]!.author.color, "author-outline");
     element.onclick = (event) => {
       if (stampMode) return;
       event.stopPropagation();
@@ -619,7 +672,7 @@ function renderInstructionMarks(plan: HTMLElement, state: RoomStateView): Instru
 function instructionRow(state: RoomStateView, instruction: InstructionView): HTMLElement {
   const row = el("div", "instruction");
   const author = el("span", "author", instruction.author.name);
-  author.style.color = instruction.author.color;
+  setAuthorColor(author, instruction.author.color, "author-text");
   row.append(author, el("span", "words", instruction.words));
   if (
     (instruction.mine || state.you.isHost || state.you.canSend) &&
@@ -796,6 +849,7 @@ export function resetView(): void {
 }
 
 export async function boot(): Promise<void> {
+  initializeTheme();
   const roomId = roomIdFromPath();
   if (!roomId) {
     showMessage("No room", "Open a room link to start.");
