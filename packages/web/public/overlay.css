@@ -1,0 +1,188 @@
+html,
+html[data-theme="dark"] {
+  --peanut-accent: #0d1b2a;
+  --peanut-accent-border: color-mix(in srgb, #0d1b2a 55%, white);
+  --peanut-ink: #e6e9ef;
+  --peanut-muted: #a4abba;
+  --peanut-line: #2a3140;
+  --peanut-surface: #171c25;
+  --peanut-on-accent: #e6e9ef;
+  --peanut-shadow: rgba(0, 0, 0, 0.36);
+  --peanut-pin-background: color-mix(in srgb, #0d1b2a 35%, transparent);
+  --peanut-author-lighten: 45%;
+}
+
+html[data-theme="light"] {
+  --peanut-accent: #0d1b2a;
+  --peanut-accent-border: color-mix(in srgb, #0d1b2a 55%, white);
+  --peanut-ink: #2b2e3a;
+  --peanut-muted: #364357;
+  --peanut-line: #d5dae3;
+  --peanut-surface: #fff;
+  --peanut-on-accent: #fff;
+  --peanut-shadow: rgba(16, 20, 27, 0.12);
+  --peanut-pin-background: color-mix(in srgb, #0d1b2a 14%, transparent);
+  --peanut-author-lighten: 0%;
+}
+
+.stamp-hover {
+  outline: 1px solid var(--peanut-accent-border) !important;
+  outline-offset: 4px !important;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stamped {
+  outline: 2px solid !important;
+  outline-offset: 4px !important;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+mark.pin {
+  background: var(--peanut-pin-background) !important;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.composer.peanut-overlay,
+.card.peanut-overlay {
+  position: absolute;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  color: var(--peanut-ink);
+  background: var(--peanut-surface);
+  border: 1px solid var(--peanut-line);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px var(--peanut-shadow);
+  font: 14px/1.4 system-ui, sans-serif;
+  z-index: 2147483647;
+}
+
+.composer.peanut-overlay input {
+  width: 260px;
+  padding: 6px 8px;
+  color: var(--peanut-ink);
+  background: var(--peanut-surface);
+  border: 1px solid var(--peanut-line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.composer.peanut-overlay button,
+.card.peanut-overlay .remove {
+  padding: 6px 10px;
+  color: var(--peanut-on-accent);
+  background: var(--peanut-accent);
+  border: 1px solid var(--peanut-accent-border);
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.card.peanut-overlay .instruction {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.card.peanut-overlay .author { font-weight: 600; }
+
+.peanut-author-text {
+  color: color-mix(
+    in srgb,
+    var(--peanut-author-color),
+    white var(--peanut-author-lighten)
+  );
+}
+
+.peanut-author-mark {
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--peanut-author-color),
+    white var(--peanut-author-lighten)
+  ) !important;
+}
+
+.peanut-author-outline {
+  outline-color: color-mix(
+    in srgb,
+    var(--peanut-author-color),
+    white var(--peanut-author-lighten)
+  ) !important;
+}
+
+.peanut-cursor-layer {
+  position: absolute;
+  inset: 0;
+  min-width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2147483646;
+}
+
+.live-cursor.peanut-overlay {
+  --peanut-cursor-color: color-mix(
+    in srgb,
+    var(--peanut-author-color),
+    white var(--peanut-author-lighten)
+  );
+  position: absolute;
+  width: 0;
+  height: 0;
+  color: var(--peanut-cursor-color);
+  opacity: 1;
+  filter: drop-shadow(0 1px 1px var(--peanut-shadow));
+}
+
+.live-cursor.peanut-overlay.stale { opacity: 0; }
+
+.live-cursor.peanut-overlay svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 24px;
+  fill: currentColor;
+  stroke: var(--peanut-surface);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+}
+
+.live-cursor.peanut-overlay .cursor-name {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: block;
+  width: max-content;
+  max-width: 140px;
+  padding: 2px 7px;
+  overflow: hidden;
+  color: var(--peanut-on-accent);
+  background: var(--peanut-cursor-color);
+  border-radius: 999px;
+  font: 600 12px/18px system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-cursor.peanut-overlay.right-edge .cursor-name {
+  right: 0;
+  left: auto;
+}
+
+.live-cursor.peanut-overlay.bottom-edge .cursor-name {
+  top: auto;
+  bottom: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .live-cursor.peanut-overlay {
+    transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}

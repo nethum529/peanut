@@ -12,10 +12,15 @@ afterEach(() => {
   server.stop();
 });
 
-async function createRoom() {
+async function createRoom(input: Record<string, unknown> = {}) {
   const response = await fetch(`${server.url}/api/rooms`, {
     method: "POST",
-    body: JSON.stringify({ title: "Retry review", content: "# Plan", hostName: "Nethum" }),
+    body: JSON.stringify({
+      title: "Retry review",
+      content: "# Plan",
+      hostName: "Nethum",
+      ...input,
+    }),
   });
   const body = await response.json();
   return { response, body, cookie: cookieFrom(response) };
@@ -43,6 +48,86 @@ describe("room creation", () => {
     expect(body.state.you.isHost).toBe(true);
     expect(body.state.you.name).toBe("Nethum");
     expect(cookie).toContain(`peanut_${body.roomId}=`);
+  });
+
+  test("defaults contentType to markdown and rejects invalid values", async () => {
+    const { body } = await createRoom();
+    expect(body.state.contentType).toBe("markdown");
+    const invalid = await fetch(`${server.url}/api/rooms`, {
+      method: "POST",
+      body: JSON.stringify({ title: "Bad", content: "x", contentType: "pdf" }),
+    });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: "bad_instruction" });
+  });
+});
+
+describe("room document", () => {
+  test("renders markdown as a full page and injects one overlay stylesheet and script", async () => {
+    const { body, cookie } = await createRoom({
+      title: 'Plan <one>',
+      content: "# Plan\n\nUse **backoff**.",
+    });
+    const response = await fetch(`${server.url}/api/rooms/${body.roomId}/document`, {
+      headers: { cookie },
+    });
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toStartWith("<!doctype html>");
+    expect(html).toContain("<title>Plan &lt;one&gt;</title>");
+    expect(html).toContain("<h1>Plan</h1>");
+    expect(html).toContain("<strong>backoff</strong>");
+    expect(html).toContain("body.plan");
+    expect(html.match(/href="\/overlay\.css"/g)).toHaveLength(1);
+    expect(html.match(/src="\/overlay\.js"/g)).toHaveLength(1);
+    expect(html.indexOf('href="/overlay.css"')).toBeLessThan(html.indexOf("</body>"));
+  });
+
+  test("passes HTML through and injects assets before the body close or at the end", async () => {
+    const source =
+      '<!doctype html><html><head><style>.x{color:red}</style></head><body><main class="x">Hello</main><script>window.answer=42</script></BODY></html>';
+    const first = await createRoom({ content: source, contentType: "html" });
+    expect(first.body.state.contentType).toBe("html");
+    const response = await fetch(`${server.url}/api/rooms/${first.body.roomId}/document`, {
+      headers: { cookie: first.cookie },
+    });
+    const html = await response.text();
+    expect(html).toContain('<style>.x{color:red}</style>');
+    expect(html).toContain("<script>window.answer=42</script>");
+    expect(html).toContain('<link rel="stylesheet" href="/overlay.css">');
+    expect(html).toContain('<script src="/overlay.js"></script>\n</body>');
+
+    const noBody = await createRoom({ content: "<main>No body tag</main>", contentType: "html" });
+    const appended = await fetch(`${server.url}/api/rooms/${noBody.body.roomId}/document`, {
+      headers: { cookie: noBody.cookie },
+    }).then((result) => result.text());
+    expect(appended).toEndWith(
+      '<main>No body tag</main>\n<link rel="stylesheet" href="/overlay.css">\n<script src="/overlay.js"></script>',
+    );
+  });
+
+  test("uses the participant cookie gate", async () => {
+    const { body, cookie } = await createRoom();
+    const path = `${server.url}/api/rooms/${body.roomId}/document`;
+    expect((await fetch(path)).status).toBe(403);
+    expect(
+      (await fetch(path, { headers: { cookie: `peanut_${body.roomId}=forged` } })).status,
+    ).toBe(403);
+    expect((await fetch(path, { headers: { cookie } })).status).toBe(200);
+  });
+
+  test("serves the overlay assets", async () => {
+    const css = await fetch(`${server.url}/overlay.css`);
+    expect(css.headers.get("content-type")).toContain("text/css");
+    const styles = await css.text();
+    expect(styles).toContain('html[data-theme="light"]');
+    expect(styles).toContain(".stamp-hover");
+    expect(styles).toContain(".peanut-cursor-layer");
+
+    const script = await fetch(`${server.url}/overlay.js`);
+    expect(script.headers.get("content-type")).toContain("javascript");
+    expect((await script.text()).length).toBeGreaterThan(1000);
   });
 });
 

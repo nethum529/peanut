@@ -24,6 +24,7 @@ export interface Participant {
 }
 
 export type Verdict = "approve" | "request_changes" | "end";
+export type ContentType = "markdown" | "html";
 
 export interface Instruction {
   id: string;
@@ -37,6 +38,7 @@ export interface Room {
   id: string;
   title: string;
   content: string;
+  contentType: ContentType;
   createdAt: number;
   status: "live" | "ended";
   endedBy?: "user" | "agent";
@@ -82,6 +84,7 @@ export interface RoomStateView {
   id: string;
   title: string;
   content: string;
+  contentType: ContentType;
   status: "live" | "ended";
   endedBy?: "user" | "agent";
   verdict?: Verdict;
@@ -129,7 +132,12 @@ export class RoomStore {
   // Without a hostName the room starts empty and the first joiner
   // becomes the host. The CLI uses this shape: the agent creates the
   // room, and the person who opens the link runs it.
-  createRoom(input: { title: string; content: string; hostName?: string }): {
+  createRoom(input: {
+    title: string;
+    content: string;
+    contentType?: ContentType;
+    hostName?: string;
+  }): {
     room: Room;
     host: Participant | null;
   } {
@@ -137,6 +145,7 @@ export class RoomStore {
       id: randomId(),
       title: input.title.trim() || "Review",
       content: input.content,
+      contentType: input.contentType ?? "markdown",
       createdAt: Date.now(),
       status: "live",
       participants: new Map(),
@@ -196,6 +205,7 @@ export class RoomStore {
       id: room.id,
       title: room.title,
       content: room.content,
+      contentType: room.contentType,
       status: room.status,
       ...(room.endedBy ? { endedBy: room.endedBy } : {}),
       ...(room.verdict ? { verdict: room.verdict } : {}),

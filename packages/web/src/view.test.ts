@@ -11,6 +11,7 @@ let server: PeanutServer;
 let win: Window;
 let doc: Document;
 let cookie = "";
+let overlayMessages: unknown[] = [];
 const realFetch = globalThis.fetch;
 const RealWebSocket = globalThis.WebSocket;
 const BunWebSocket = RealWebSocket as unknown as new (
@@ -93,6 +94,35 @@ async function openExistingRoom(
   setGlobals();
   await boot();
   await Bun.sleep(50);
+  connectFakeOverlay();
+}
+
+function frame(): HTMLIFrameElement {
+  return doc.querySelector("iframe.plan-frame") as HTMLIFrameElement;
+}
+
+function postFromOverlay(data: unknown, origin = "null", source: unknown = null): void {
+  const event = new win.MessageEvent("message", {
+    data,
+    origin,
+    source: (source ?? frame().contentWindow) as any,
+  });
+  win.dispatchEvent(event);
+}
+
+function connectFakeOverlay(snapshot = '<main><h1>Plan</h1><p>first paragraph</p></main>'): void {
+  overlayMessages = [];
+  const contentWindow = frame().contentWindow!;
+  contentWindow.postMessage = ((message: unknown) => {
+    overlayMessages.push(message);
+    const request = message as { type?: string; requestId?: string };
+    if (request.type === "snapshot-request" && request.requestId) {
+      queueMicrotask(() =>
+        postFromOverlay({ type: "snapshot", requestId: request.requestId!, html: snapshot }),
+      );
+    }
+  }) as typeof contentWindow.postMessage;
+  postFromOverlay({ type: "ready" });
 }
 
 async function joinRoom(
@@ -264,10 +294,11 @@ describe("chat sidebar", () => {
 
   test("queued icon buttons stay crisp in the bottom-right footer", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
-    click(doc.querySelector("#plan p")!);
-    const input = doc.querySelector(".composer input") as HTMLInputElement;
-    input.value = "Review this one.";
-    pressEnter(input);
+    postFromOverlay({
+      type: "pin",
+      words: "Review this one.",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+    });
     await Bun.sleep(150);
 
     const edit = doc.querySelector('.bubble-action[aria-label="Edit"]');
@@ -783,24 +814,27 @@ describe("chat sidebar", () => {
     expect(html).toContain("--paper: #f3f5f8;");
   });
 
-  test("a stamp composer closes when a click lands outside it", async () => {
+  test("uses one persistent sandboxed frame and rejects untrusted overlay messages", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
-    expect(doc.querySelector(".stamp-toggle")).toBeNull();
-    const para = doc.querySelector("#plan p")!;
-    click(para);
-    const composer = doc.querySelector(".composer");
-    expect(composer).not.toBeNull();
+    const original = frame();
+    expect(original.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-popups");
+    expect(original.src).toContain("/api/rooms/");
+    expect(original.src).toEndWith("/document");
 
-    const html = await Bun.file(new URL("../public/index.html", import.meta.url)).text();
-    const viewSource = await Bun.file(new URL("./view.ts", import.meta.url)).text();
-    const popoverRule = html.match(/\.composer, \.card \{([^}]*)\}/)?.[1] ?? "";
-    const inputRule = html.match(/\.composer input \{([^}]*)\}/)?.[1] ?? "";
-    expect(popoverRule).toContain("border-radius: 14px");
-    expect(inputRule).toContain("font-size: 14px");
-    expect(viewSource).toContain('const viewportTop = window.scrollY + toolbarHeight + 8;');
+    postFromOverlay({ type: "pin", words: "bad", anchor: { type: "stamp", selector: "p" } }, "https://evil.test");
+    postFromOverlay({ type: "pin", words: "bad", anchor: { type: "stamp", selector: "p" } }, "null", win);
+    postFromOverlay({ type: "pin", words: "bad", anchor: { nope: true } });
+    await Bun.sleep(100);
+    expect(doc.querySelector(".bubble.queued")).toBeNull();
 
-    click(doc.querySelector(".sidebar")!);
-    expect(doc.querySelector(".composer")).toBeNull();
+    postFromOverlay({
+      type: "pin",
+      words: "good",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+    });
+    await Bun.sleep(150);
+    expect(doc.querySelector(".bubble.queued")?.textContent).toContain("good");
+    expect(frame()).toBe(original);
   });
 });
 
@@ -822,16 +856,16 @@ describe("live cursors", () => {
     );
     await Bun.sleep(50);
 
-    const cursor = doc.querySelector(".live-cursor") as HTMLElement;
-    expect(cursor).not.toBeNull();
-    expect(cursor.style.left).toBe("25%");
-    expect(cursor.style.top).toBe("75%");
-    expect(cursor.classList.contains("author-cursor")).toBe(true);
-    expect(cursor.style.getPropertyValue("--author-color")).toBe(guest.participant.color);
-    expect(cursor.querySelector(".cursor-name")?.textContent).toBe("Sam");
+    const cursorMessage = overlayMessages
+      .filter((message: any) => message.type === "cursors")
+      .at(-1) as any;
+    expect(cursorMessage.cursors).toEqual([
+      { participantId: guest.participant.id, x: 0.25, y: 0.75, stale: false },
+    ]);
 
     await Bun.sleep(3200);
-    expect(doc.querySelector(".live-cursor")).toBeNull();
+    const faded = overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any;
+    expect(faded.cursors).toEqual([]);
     peer.close();
   }, 5000);
 
@@ -851,7 +885,10 @@ describe("live cursors", () => {
     peer.send("null");
     await Bun.sleep(50);
 
-    expect(doc.querySelector(".live-cursor")).toBeNull();
+    const cursorMessage = overlayMessages
+      .filter((message: any) => message.type === "cursors")
+      .at(-1) as any;
+    expect(cursorMessage.cursors).toEqual([]);
     peer.close();
   });
 
@@ -870,17 +907,26 @@ describe("live cursors", () => {
       }),
     );
     await Bun.sleep(50);
-    const before = doc.querySelector(".live-cursor");
-    expect(before).not.toBeNull();
+    const before = frame();
+    expect((overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any).cursors)
+      .toHaveLength(1);
 
     await joinRoom(room.roomId, "Alex");
     await Bun.sleep(2100);
 
     expect(doc.querySelectorAll(".person-row")).toHaveLength(3);
-    const after = doc.querySelector(".live-cursor");
-    expect(after).not.toBeNull();
-    expect(after).not.toBe(before);
-    expect(after?.querySelector(".cursor-name")?.textContent).toBe("Sam");
+    const after = frame();
+    expect(after).toBe(before);
+    const stateMessage = overlayMessages
+      .filter((message: any) => message.type === "state")
+      .at(-1) as any;
+    expect(stateMessage.participants.map((person: any) => person.name)).toEqual([
+      "Nethum",
+      "Sam",
+      "Alex",
+    ]);
+    expect((overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any).cursors)
+      .toHaveLength(1);
     peer.close();
   }, 4000);
 
@@ -896,21 +942,13 @@ describe("live cursors", () => {
       y?: number;
     }> = [];
     peer.onmessage = (event) => messages.push(JSON.parse(String(event.data)));
-    const plan = doc.getElementById("plan") as HTMLElement;
-    plan.getBoundingClientRect = () =>
-      ({ left: 100, top: 200, width: 200, height: 200, right: 300, bottom: 400 }) as DOMRect;
-
-    for (const [clientX, clientY] of [
-      [110, 210],
-      [130, 230],
-      [150, 250],
-      [170, 270],
-      [200, 300],
-    ]) {
-      plan.dispatchEvent(
-        new win.MouseEvent("pointermove", { bubbles: true, clientX, clientY }) as unknown as Event,
-      );
-    }
+    for (const [x, y] of [
+      [0.05, 0.05],
+      [0.15, 0.15],
+      [0.25, 0.25],
+      [0.35, 0.35],
+      [0.5, 0.5],
+    ]) postFromOverlay({ type: "cursor", x, y });
     await Bun.sleep(100);
 
     expect(messages.length).toBeGreaterThanOrEqual(1);
@@ -921,7 +959,7 @@ describe("live cursors", () => {
       x: 0.5,
       y: 0.5,
     });
-    plan.dispatchEvent(new win.MouseEvent("pointerleave") as unknown as Event);
+    postFromOverlay({ type: "cursor-leave" });
     await Bun.sleep(50);
     expect(messages.at(-1)).toEqual({
       type: "cursor-leave",

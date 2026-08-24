@@ -6,6 +6,8 @@
 
 import appJs from "../../web/dist/app.js.txt" with { type: "text" };
 import indexHtml from "../../web/dist/index.html.txt" with { type: "text" };
+import overlayJs from "../../web/dist/overlay.js.txt" with { type: "text" };
+import overlayCss from "../../web/public/overlay.css" with { type: "text" };
 import googleSans from "../../web/public/fonts/google-sans.woff2" with { type: "file" };
 import googleSansLatinExt from "../../web/public/fonts/google-sans-latin-ext.woff2" with {
   type: "file",
@@ -21,6 +23,8 @@ import { setEmbeddedAssets } from "../../server/src/http.ts";
 setEmbeddedAssets({
   indexHtml,
   appJs,
+  overlayJs,
+  overlayCss,
   fonts: {
     "/fonts/google-sans.woff2": Bun.file(googleSans),
     "/fonts/google-sans-latin-ext.woff2": Bun.file(googleSansLatinExt),

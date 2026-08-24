@@ -19,6 +19,19 @@ if (web.outputs.length !== 1) {
   process.exit(1);
 }
 await Bun.write(`${root}packages/web/dist/app.js.txt`, await web.outputs[0]!.text());
+
+const overlay = await Bun.build({
+  entrypoints: [`${root}packages/web/src/overlay.ts`],
+  target: "browser",
+  format: "iife",
+  minify: true,
+});
+if (!overlay.success || overlay.outputs.length !== 1) {
+  console.error("Overlay bundle failed:");
+  for (const message of overlay.logs) console.error(String(message));
+  process.exit(1);
+}
+await Bun.write(`${root}packages/web/dist/overlay.js.txt`, await overlay.outputs[0]!.text());
 await Bun.write(
   `${root}packages/web/dist/index.html.txt`,
   Bun.file(`${root}packages/web/public/index.html`),

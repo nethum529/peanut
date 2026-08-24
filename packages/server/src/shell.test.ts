@@ -33,7 +33,8 @@ describe("web shell", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("javascript");
     const body = await response.text();
-    expect(body).toContain("renderMarkdown");
+    expect(body).toContain("plan-frame");
+    expect(body).toContain("isOverlayToChromeMessage");
   });
 
   test("self-hosted fonts are served as woff2", async () => {

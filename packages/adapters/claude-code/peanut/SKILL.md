@@ -5,7 +5,7 @@ description: Share a plan or document for live human review with Peanut. Starts 
 
 # Peanut review
 
-Peanut is a local review tool. You share a markdown file, people
+Peanut is a local review tool. You share a document, people
 join by a link, pin instructions to the text, and send them back
 to you in rounds. The review ends with a verdict.
 
@@ -22,6 +22,10 @@ When the user asks for a review of a file, run in the background:
 ```
 peanut share <file>
 ```
+
+Markdown files render as a review document. Files with an `.html`
+or `.htm` extension are shared as-is, including their styles and
+scripts.
 
 Add --tunnel when a reviewer is not on this machine; the command
 then also prints a public link.
