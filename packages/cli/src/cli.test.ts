@@ -200,6 +200,63 @@ describe("peanut cli", () => {
     expect(await sharing.exited).toBe(1);
   }, 15000);
 
+  test("share --watch debounces a two-step save into one content update", async () => {
+    const plan = await writePlan();
+    const sharing = run(["share", plan, "--watch", "--server", server.url]);
+    const session = await waitForSession(join(dir, SESSION));
+    const cookie = await joinAsHost(session.roomId);
+    await Bun.sleep(100);
+
+    await Bun.write(plan, "# Plan\n\nPartly saved");
+    await Bun.sleep(50);
+    await Bun.write(plan, "# Plan\n\nComplete save.\n");
+
+    let state: { content: string; contentVersion: number } = { content: "", contentVersion: 0 };
+    for (let tries = 0; tries < 30; tries += 1) {
+      state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+        headers: { cookie },
+      }).then((response) => response.json());
+      if (state.content.includes("Complete save.")) break;
+      await Bun.sleep(50);
+    }
+    await Bun.sleep(400);
+    state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toContain("Complete save.");
+    expect(state.contentVersion).toBe(2);
+
+    await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(await sharing.exited).toBe(1);
+  }, 15000);
+
+  test("share --watch does not update unchanged saved content", async () => {
+    const plan = await writePlan();
+    const original = await Bun.file(plan).text();
+    const sharing = run(["share", plan, "--watch", "--server", server.url]);
+    const session = await waitForSession(join(dir, SESSION));
+    const cookie = await joinAsHost(session.roomId);
+    await Bun.sleep(100);
+
+    await Bun.write(plan, original);
+    await Bun.sleep(700);
+
+    const state = await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.content).toBe(original);
+    expect(state.contentVersion).toBe(1);
+
+    await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(await sharing.exited).toBe(1);
+  }, 15000);
+
   test("reply warns after a host end, prints the verdict, and cleans up", async () => {
     const plan = await writePlan();
     const sharing = run(["share", plan, "--server", server.url]);

@@ -1,5 +1,6 @@
+import { watch as watchFileChanges } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
 import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
@@ -7,7 +8,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 // final verdict, prints it, and exits. The room lives in a session
 // file, so a later invocation continues the same review.
 //
-//   peanut share <file> [--title t] [--server url] [--session path]
+//   peanut share <file> [--watch] [--title t] [--server url] [--session path]
 //   peanut reply <message> [--meta m] [--session path]
 //   peanut push [--session path]
 //   peanut wait [--session path]
@@ -35,7 +36,7 @@ interface Flags {
   named: Map<string, string>;
 }
 
-const BOOLEAN_FLAGS = new Set(["tunnel"]);
+const BOOLEAN_FLAGS = new Set(["tunnel", "watch"]);
 
 function parseArgs(argv: string[]): Flags {
   const positional: string[] = [];
@@ -138,12 +139,69 @@ async function updateContentFromFile(
     if (refusal === "fail") fail(`The content update was refused (${response.status}).`);
     console.error(
       `Warning: The content update was refused (${response.status}). ` +
-        "The reply will still be sent.",
+        "The review will continue.",
     );
     return "skipped";
   }
   const result = (await response.json()) as { updated: boolean };
   return result.updated ? "updated" : "unchanged";
+}
+
+const WATCH_DEBOUNCE_MS = 300;
+
+// Watch the directory instead of the file itself so editors that save by
+// replacing the file keep producing events after the first save.
+function startContentWatcher(session: Session): () => void {
+  const filePath = session.filePath;
+  if (!filePath) return () => {};
+
+  const fileName = basename(filePath);
+  let debounce: ReturnType<typeof setTimeout> | undefined;
+  let updating = false;
+  let updatePending = false;
+
+  const scheduleUpdate = () => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      debounce = undefined;
+      void pushUpdate();
+    }, WATCH_DEBOUNCE_MS);
+  };
+
+  const pushUpdate = async () => {
+    if (updating) {
+      updatePending = true;
+      return;
+    }
+    updating = true;
+    try {
+      await updateContentFromFile(session, "warn");
+    } catch (error) {
+      console.error(
+        `Warning: The shared file could not be pushed: ${
+          error instanceof Error ? error.message : String(error)
+        }. The review will continue.`,
+      );
+    } finally {
+      updating = false;
+      if (updatePending) {
+        updatePending = false;
+        scheduleUpdate();
+      }
+    }
+  };
+
+  const watcher = watchFileChanges(dirname(filePath), (_event, changedFile) => {
+    if (changedFile === null || changedFile.toString() === fileName) scheduleUpdate();
+  });
+  watcher.on("error", (error) => {
+    console.error(`Warning: The shared file watcher stopped: ${error.message}`);
+  });
+
+  return () => {
+    if (debounce) clearTimeout(debounce);
+    watcher.close();
+  };
 }
 
 async function serverAlive(url: string): Promise<boolean> {
@@ -282,7 +340,7 @@ async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
 
 async function share(flags: Flags): Promise<never> {
   const filePath = flags.positional[0];
-  if (!filePath) fail("Usage: peanut share <file> [--title t] [--server url]");
+  if (!filePath) fail("Usage: peanut share <file> [--watch] [--title t] [--server url]");
   const file = Bun.file(filePath);
   if (!(await file.exists())) fail(`No such file: ${filePath}`);
   const content = await file.text();
@@ -319,6 +377,11 @@ async function share(flags: Flags): Promise<never> {
     ...(serverPid === undefined ? {} : { serverPid }),
   };
   await saveSession(flags, session);
+
+  if (flags.named.has("watch")) {
+    const stopWatching = startContentWatcher(session);
+    process.once("exit", stopWatching);
+  }
 
   // The local link prints at once; the public link follows when the
   // tunnel is up, so a slow tunnel never delays the room.
