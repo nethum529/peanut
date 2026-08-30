@@ -64,6 +64,51 @@ function renderEmphasis(text: string): string {
     .replace(/\*([^*]+)\*/g, "<em>$1</em>");
 }
 
+type TableAlignment = "left" | "right" | "center" | null;
+
+function tableCells(line: string): string[] | null {
+  let row = line.trim();
+  if (!row.includes("|")) return null;
+  if (row.startsWith("|")) row = row.slice(1);
+  if (row.endsWith("|")) row = row.slice(0, -1);
+  return row.split("|").map((cell) => cell.trim());
+}
+
+function tableAlignments(line: string, columns: number): TableAlignment[] | null {
+  const cells = tableCells(line);
+  if (!cells || cells.length !== columns) return null;
+
+  const alignments: TableAlignment[] = [];
+  for (const cell of cells) {
+    if (!/^:?-{3,}:?$/.test(cell)) return null;
+    alignments.push(
+      cell.startsWith(":") && cell.endsWith(":")
+        ? "center"
+        : cell.endsWith(":")
+          ? "right"
+          : cell.startsWith(":")
+            ? "left"
+            : null,
+    );
+  }
+  return alignments;
+}
+
+function tableStart(lines: string[], index: number): {
+  header: string[];
+  alignments: TableAlignment[];
+} | null {
+  const header = tableCells(lines[index] ?? "");
+  if (!header || index + 1 >= lines.length) return null;
+  const alignments = tableAlignments(lines[index + 1]!, header.length);
+  return alignments ? { header, alignments } : null;
+}
+
+function tableCell(tag: "th" | "td", text: string, alignment: TableAlignment): string {
+  const style = alignment ? ` style="text-align: ${alignment}"` : "";
+  return `<${tag}${style}>${renderInline(text)}</${tag}>`;
+}
+
 export function renderMarkdown(source: string): string {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -124,12 +169,46 @@ export function renderMarkdown(source: string): string {
       continue;
     }
 
+    const table = tableStart(lines, index);
+    if (table) {
+      const header = table.header
+        .map((cell, column) => tableCell("th", cell, table.alignments[column]!))
+        .join("");
+      const rows: string[] = [];
+      index += 2;
+      while (index < lines.length) {
+        const cells = tableCells(lines[index]!);
+        if (!cells || lines[index]!.trim() === "") break;
+        const row = table.alignments
+          .map((alignment, column) => tableCell("td", cells[column] ?? "", alignment))
+          .join("");
+        rows.push(`<tr>${row}</tr>`);
+        index += 1;
+      }
+      out.push(`<table><thead><tr>${header}</tr></thead><tbody>${rows.join("")}</tbody></table>`);
+      continue;
+    }
+
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      const quoted: string[] = [];
+      while (index < lines.length) {
+        const next = lines[index]!.match(/^>\s?(.*)$/);
+        if (!next) break;
+        quoted.push(next[1]!);
+        index += 1;
+      }
+      out.push(`<blockquote><p>${renderInline(quoted.join(" "))}</p></blockquote>`);
+      continue;
+    }
+
     const paragraph: string[] = [line];
     index += 1;
     while (
       index < lines.length &&
       lines[index]!.trim() !== "" &&
-      !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+[.)]\s)/.test(lines[index]!)
+      !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+[.)]\s|>|\|)/.test(lines[index]!) &&
+      !tableStart(lines, index)
     ) {
       paragraph.push(lines[index]!);
       index += 1;
