@@ -10,6 +10,15 @@ export interface DesignReference {
   buildingBlocks: DesignBuildingBlock[];
 }
 
+export const DESIGN_BLOCK_NAMES = {
+  section: "section",
+  card: "card",
+  decisionRow: "decision row",
+  comparisonTable: "comparison table",
+  annotatedCode: "annotated code",
+  callout: "callout",
+} as const;
+
 const CSS_STARTING_POINT = `:root {
   color-scheme: light;
   --page: #f7f6f2;
@@ -163,32 +172,32 @@ export const DESIGN_REFERENCE: DesignReference = {
   diagram: DIAGRAM_SNIPPET,
   buildingBlocks: [
     {
-      name: "section",
+      name: DESIGN_BLOCK_NAMES.section,
       selector: ".review-section",
       purpose: "Group one review topic under a clear heading and short introduction.",
     },
     {
-      name: "card",
+      name: DESIGN_BLOCK_NAMES.card,
       selector: ".card",
       purpose: "Contain a focused example, summary, or related group of details.",
     },
     {
-      name: "decision row",
+      name: DESIGN_BLOCK_NAMES.decisionRow,
       selector: ".decision-row",
       purpose: "Connect a choice with its reason and current status.",
     },
     {
-      name: "comparison table",
+      name: DESIGN_BLOCK_NAMES.comparisonTable,
       selector: ".comparison-table",
       purpose: "Wrap a table that compares options with the same criteria in each column.",
     },
     {
-      name: "annotated code",
+      name: DESIGN_BLOCK_NAMES.annotatedCode,
       selector: ".annotated-code",
       purpose: "Show only the code needed for review and mark the important lines.",
     },
     {
-      name: "callout",
+      name: DESIGN_BLOCK_NAMES.callout,
       selector: ".callout",
       purpose: "Highlight a constraint, risk, open question, or recommended action.",
     },
