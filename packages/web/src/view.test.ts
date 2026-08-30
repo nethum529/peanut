@@ -47,10 +47,16 @@ function setGlobals(): void {
   g.WebSocket = function TestWebSocket(url: string | URL): WebSocket {
     return new BunWebSocket(url, { headers: { cookie } });
   };
-  g.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+  g.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const raw = String(input);
     const url = raw.startsWith("http") ? raw : server.url.replace(/\/$/, "") + raw;
-    return realFetch(url, { ...init, headers: { ...(init?.headers as object), cookie } });
+    const response = await realFetch(url, {
+      ...init,
+      headers: { ...(init?.headers as object), cookie },
+    });
+    const nextCookie = (response.headers.get("set-cookie") ?? "").split(";")[0];
+    if (nextCookie) cookie = nextCookie;
+    return response;
   }) as typeof fetch;
 }
 
@@ -69,6 +75,14 @@ async function createRoom(
   cookie = (created.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
   const body = await created.json();
   return { roomId: body.roomId, agentToken: body.agentToken, participant: body.state.you };
+}
+
+async function createHostlessRoom(content: string): Promise<{ roomId: string; agentToken: string }> {
+  const created = await realFetch(`${server.url}/api/rooms`, {
+    method: "POST",
+    body: JSON.stringify({ title: "Hostless test", content, hostless: true }),
+  });
+  return created.json();
 }
 
 async function openRoom(
@@ -206,6 +220,54 @@ afterEach(() => {
   g.fetch = realFetch;
   g.WebSocket = RealWebSocket;
   for (const name of INSTALLED_GLOBALS) delete g[name];
+});
+
+describe("room join", () => {
+  test("the first viewer of a hostless room auto-joins as Host", async () => {
+    const room = await createHostlessRoom("# Plan\n\nfirst paragraph");
+    installRoomWindow(room.roomId, "");
+    await boot();
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".join")).toBeNull();
+    expect(doc.querySelector("iframe.plan-frame")).not.toBeNull();
+    expect((doc.querySelector(".person-name-input") as HTMLInputElement).value).toBe("Host");
+    const state = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.you).toMatchObject({ name: "Host", isHost: true });
+    expect(state.participants).toHaveLength(1);
+  });
+
+  test("a second viewer keeps the name screen and joins as a guest", async () => {
+    const room = await createHostlessRoom("# Plan\n\nfirst paragraph");
+    const claimed = await realFetch(`${server.url}/api/rooms/${room.roomId}/join`, {
+      method: "POST",
+      body: JSON.stringify({ claimHost: true }),
+    });
+    expect(claimed.ok).toBe(true);
+
+    installRoomWindow(room.roomId, "");
+    await boot();
+    expect(doc.querySelector(".join h1")?.textContent).toBe("Join the review");
+    expect(doc.querySelector("iframe.plan-frame")).toBeNull();
+
+    const input = doc.querySelector(".join input") as HTMLInputElement;
+    input.value = "Sam";
+    (doc.querySelector(".join button") as HTMLButtonElement).click();
+    await Bun.sleep(50);
+
+    expect(doc.querySelector(".join")).toBeNull();
+    expect(doc.querySelector("iframe.plan-frame")).not.toBeNull();
+    const state = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.you).toMatchObject({ name: "Sam", isHost: false });
+    expect(state.participants.map((person: { name: string }) => person.name)).toEqual([
+      "Host",
+      "Sam",
+    ]);
+  });
 });
 
 describe("chat sidebar", () => {
@@ -694,7 +756,9 @@ describe("chat sidebar", () => {
     expect(icon?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     const rows = [...doc.querySelectorAll(".person-row")];
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.querySelector(".person-name")?.textContent).toBe("Nethum");
+    expect((rows[0]?.querySelector(".person-name-input") as HTMLInputElement).value).toBe(
+      "Nethum",
+    );
     expect(rows[0]?.querySelector(".person-tag")).toBeNull();
     expect(icon?.closest(".toolbar-actions")?.querySelector(".theme-toggle")).not.toBeNull();
 
@@ -736,6 +800,32 @@ describe("chat sidebar", () => {
     expect(menuTooltipRule).toContain("visibility: hidden");
   });
 
+  test("the host renames from their participant row and an empty name is refused", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    let input = doc.querySelector(".person-name-input") as HTMLInputElement;
+    let save = doc.querySelector(".person-name-save") as HTMLButtonElement;
+    expect(input.value).toBe("Nethum");
+    expect(input.labels?.[0]?.textContent).toBe("Your name");
+    expect(save.textContent).toBe("Save");
+
+    input.value = "   ";
+    save.click();
+    expect(input.value).toBe("Nethum");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(doc.querySelector(".person-name-error")?.textContent).toBe("Name cannot be empty.");
+
+    input.value = "New Host";
+    save.click();
+    await Bun.sleep(100);
+    input = doc.querySelector(".person-name-input") as HTMLInputElement;
+    expect(input.value).toBe("New Host");
+    expect(doc.querySelector(".toast-region")?.textContent).toBe("Name updated.");
+    const state = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+    expect(state.you.name).toBe("New Host");
+  });
+
   test("different joiners keep their own colors on participant dots", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
     const hostCookie = cookie;
@@ -773,7 +863,10 @@ describe("chat sidebar", () => {
     await openExistingRoom(room.roomId, hostCookie);
 
     const rows = [...doc.querySelectorAll(".person-row")];
-    const hostRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Nethum");
+    const hostRow = rows.find(
+      (row) =>
+        (row.querySelector(".person-name-input") as HTMLInputElement | null)?.value === "Nethum",
+    );
     const guestRow = rows.find((row) => row.querySelector(".person-name")?.textContent === "Sam");
     expect(hostRow?.querySelector(".permission-switch")).toBeNull();
     let permission = guestRow?.querySelector(".permission-switch") as HTMLButtonElement;

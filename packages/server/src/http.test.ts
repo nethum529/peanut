@@ -248,6 +248,124 @@ describe("guest join", () => {
   });
 });
 
+describe("hostless join", () => {
+  test("reports an empty room and atomically lets only one viewer claim Host", async () => {
+    const { body: created } = await createRoom({ hostless: true });
+    const initial = await fetch(`${server.url}/api/rooms/${created.roomId}/state`);
+    expect(initial.status).toBe(403);
+    expect(await initial.json()).toMatchObject({
+      error: "not_a_participant",
+      participantCount: 0,
+    });
+
+    const claims = await Promise.all([
+      fetch(`${server.url}/api/rooms/${created.roomId}/join`, {
+        method: "POST",
+        body: JSON.stringify({ claimHost: true }),
+      }),
+      fetch(`${server.url}/api/rooms/${created.roomId}/join`, {
+        method: "POST",
+        body: JSON.stringify({ claimHost: true }),
+      }),
+    ]);
+    expect(claims.map((response) => response.status).sort()).toEqual([200, 409]);
+    const winner = claims.find((response) => response.status === 200)!;
+    const state = await winner.json();
+    expect(state.you).toMatchObject({ name: "Host", isHost: true });
+    expect(state.participants).toHaveLength(1);
+
+    const later = await fetch(`${server.url}/api/rooms/${created.roomId}/state`);
+    expect(await later.json()).toMatchObject({ participantCount: 1 });
+    const guest = await join(created.roomId, "Sam");
+    expect(guest.body.you).toMatchObject({ name: "Sam", isHost: false });
+  });
+});
+
+describe("participant rename", () => {
+  test("renames only the caller and updates existing chat authors", async () => {
+    const { body: created, cookie: hostCookie } = await createRoom();
+    const guest = await join(created.roomId, "Sam");
+    await fetch(`${server.url}/api/rooms/${created.roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ words: "Host note.", anchor: { type: "chat" } }),
+    });
+    await fetch(`${server.url}/api/rooms/${created.roomId}/flush`, {
+      method: "POST",
+      headers: { cookie: hostCookie },
+      body: JSON.stringify({ domSnapshot: "<main></main>", nextStep: "Review." }),
+    });
+
+    const hostId = created.state.you.id as string;
+    const renamed = await fetch(
+      `${server.url}/api/rooms/${created.roomId}/participants/${hostId}`,
+      {
+        method: "PATCH",
+        headers: { cookie: hostCookie },
+        body: JSON.stringify({ name: "  New Host  " }),
+      },
+    );
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).you.name).toBe("New Host");
+
+    const guestView = await fetch(`${server.url}/api/rooms/${created.roomId}/state`, {
+      headers: { cookie: guest.cookie },
+    }).then((response) => response.json());
+    expect(guestView.participants[0].name).toBe("New Host");
+    expect(guestView.rounds[0].instructions[0].author.name).toBe("New Host");
+
+    const forbidden = await fetch(
+      `${server.url}/api/rooms/${created.roomId}/participants/${hostId}`,
+      {
+        method: "PATCH",
+        headers: { cookie: guest.cookie },
+        body: JSON.stringify({ name: "Not yours" }),
+      },
+    );
+    expect(forbidden.status).toBe(403);
+
+    const guestRename = await fetch(
+      `${server.url}/api/rooms/${created.roomId}/participants/${guest.body.you.id}`,
+      {
+        method: "PATCH",
+        headers: { cookie: guest.cookie },
+        body: JSON.stringify({ name: "Samuel" }),
+      },
+    );
+    expect(guestRename.status).toBe(200);
+    expect((await guestRename.json()).you.name).toBe("Samuel");
+
+    const capped = await fetch(
+      `${server.url}/api/rooms/${created.roomId}/participants/${hostId}`,
+      {
+        method: "PATCH",
+        headers: { cookie: hostCookie },
+        body: JSON.stringify({ name: "x".repeat(50) }),
+      },
+    ).then((response) => response.json());
+    expect(capped.you.name).toBe("x".repeat(40));
+  });
+
+  test("refuses an empty name and keeps the old name", async () => {
+    const { body: created, cookie } = await createRoom();
+    const hostId = created.state.you.id as string;
+    const response = await fetch(
+      `${server.url}/api/rooms/${created.roomId}/participants/${hostId}`,
+      {
+        method: "PATCH",
+        headers: { cookie },
+        body: JSON.stringify({ name: "   " }),
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "bad_name" });
+    const state = await fetch(`${server.url}/api/rooms/${created.roomId}/state`, {
+      headers: { cookie },
+    }).then((result) => result.json());
+    expect(state.you.name).toBe("Nethum");
+  });
+});
+
 describe("room state", () => {
   test("requires a valid session", async () => {
     const { body: created } = await createRoom();
