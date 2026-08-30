@@ -35,6 +35,31 @@ async function writePlan(): Promise<string> {
   return path;
 }
 
+async function shareAndEnd(
+  name: string,
+  content: string,
+  extraArgs: string[] = [],
+): Promise<{ contentType: string; stdout: string; stderr: string }> {
+  const path = join(dir, name);
+  await Bun.write(path, content);
+  const proc = run(["share", path, ...extraArgs, "--server", server.url]);
+  const session = await waitForSession(join(dir, SESSION));
+  const cookie = await joinAsHost(session.roomId);
+  const state = (await fetch(`${server.url}/api/rooms/${session.roomId}/state`, {
+    headers: { cookie },
+  }).then((response) => response.json())) as { contentType: string };
+  await fetch(`${server.url}/api/rooms/${session.roomId}/end`, {
+    method: "POST",
+    headers: { cookie },
+  });
+  expect(await proc.exited).toBe(1);
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { contentType: state.contentType, stdout, stderr };
+}
+
 interface SessionFile {
   roomId: string;
   agentToken: string;
@@ -195,6 +220,38 @@ describe("peanut cli", () => {
       expect(await proc.exited).toBe(1);
     }
   }, 20_000);
+
+  test("share hints when Markdown contains a table, image, or diagram", async () => {
+    const cases: Array<[string, string]> = [
+      ["table.md", "| Item | Status |\n| --- | --- |\n| Tests | Passing |\n"],
+      ["image.md", "# Preview\n\n![Home screen](home.png)\n"],
+      ["diagram.md", ["# Flow", "", "```mermaid", "graph TD", "  A --> B", "```", ""].join("\n")],
+    ];
+
+    for (const [name, content] of cases) {
+      const result = await shareAndEnd(name, content);
+      expect(result.contentType).toBe("markdown");
+      expect(result.stderr).toContain("HTML artifact");
+      expect(result.stderr).toContain("peanut design");
+      expect(result.stderr).toContain("peanut playbook");
+      expect(result.stdout).not.toContain("HTML artifact");
+    }
+  }, 20_000);
+
+  test("share does not hint for plain Markdown prose", async () => {
+    const result = await shareAndEnd("prose.md", "# Notes\n\nThis is a short review document.\n");
+    expect(result.stderr).toBe("");
+  });
+
+  test("share --no-hint suppresses the HTML artifact hint", async () => {
+    const result = await shareAndEnd(
+      "table.md",
+      "| Item | Status |\n| --- | --- |\n| Tests | Passing |\n",
+      ["--no-hint"],
+    );
+    expect(result.contentType).toBe("markdown");
+    expect(result.stderr).toBe("");
+  });
 
   test("reply lands on the last round and the verdict ends with exit 0 on approve", async () => {
     const plan = await writePlan();
