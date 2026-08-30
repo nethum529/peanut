@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { DESIGN_REFERENCE, formatDesignReference } from "./design.ts";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
+import { formatPlaybookList, formatUnknownPlaybook, getPlaybook } from "./playbooks.ts";
 import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
 // The peanut CLI. Each invocation blocks until the next round or the
@@ -15,6 +16,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 //   peanut wait [--session path]
 //   peanut serve [--state path] [--port n]
 //   peanut design [--json]
+//   peanut playbook [id]
 //
 // Exit codes: 0 for a delivered round or an approve, 1 for a review
 // that ended without approve, 2 for a usage or file error.
@@ -465,6 +467,17 @@ function design(flags: Flags): void {
   console.log(output);
 }
 
+function playbook(flags: Flags): void {
+  const id = flags.positional[0];
+  if (!id) {
+    console.log(formatPlaybookList());
+    return;
+  }
+  const guidance = getPlaybook(id);
+  if (!guidance) fail(formatUnknownPlaybook(id));
+  console.log(guidance);
+}
+
 const flags = parseArgs(process.argv.slice(2));
 const command = flags.positional.shift();
 
@@ -475,7 +488,8 @@ try {
   else if (command === "wait") await wait(flags);
   else if (command === "serve") await serve(flags);
   else if (command === "design") design(flags);
-  else fail("Usage: peanut <share|reply|push|wait|serve|design> ...");
+  else if (command === "playbook") playbook(flags);
+  else fail("Usage: peanut <share|reply|push|wait|serve|design|playbook> ...");
 } catch (error) {
   // A transport failure must not look like a review verdict. Exit 1
   // is reserved for a review that ended without approve.
