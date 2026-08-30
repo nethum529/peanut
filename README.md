@@ -4,21 +4,42 @@ Peanut is a local, browser-based, multiplayer review surface for coding
 agents. An agent shares a plan or a live UI. People join by link, pin
 instructions to the content, and the agent applies them in rounds.
 
+![Two reviewers sending a feedback round to an agent](docs/peanut-demo.gif)
+
 ## How it works
 
-1. An agent shares work. Everyone joins by link.
-2. The room pins instructions. Live cursors show presence.
-3. The host flushes the round: skims the list, prunes, presses Send.
-4. The agent works, then replies into the room for everyone.
-5. The page reloads. Back to step 2, until a verdict.
+1. An agent shares a Markdown file or live UI.
+2. Reviewers join by link, pin instructions, and see live cursors.
+3. The host sends the review round to the agent.
+4. The agent applies the work and replies into the room.
+5. The group repeats the loop until the host ends the review.
 
 An annotation is an instruction to the agent. There is no comment type.
-Verdicts are Approve, Request changes, and End. Host only.
+
+## Quick start
+
+Download the Linux binary from the
+[latest release](https://github.com/nethum529/peanut/releases/latest), then:
+
+```sh
+chmod +x peanut
+./peanut share plan.md
+```
+
+Add `--tunnel` to create a public link with Cloudflare Quick Tunnels.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Agent<br/>peanut CLI"] <-->|"rounds and replies"| S["Bun server<br/>room state"]
+    B["Reviewers<br/>browser UI"] <-->|"HTTP and WebSocket"| S
+```
 
 ## Parts
 
-- `packages/server`: rooms, Yjs relay, rounds API with long-poll.
-- `packages/web`: the review UI.
+- `packages/server`: rooms, WebSocket relay, and rounds API with long-poll.
+- `packages/web`: review UI, live presence, and anchored instructions.
 - `packages/cli`: the `peanut` command. It blocks until the review ends.
 - `packages/adapters`: thin skill and command definitions per harness.
 
