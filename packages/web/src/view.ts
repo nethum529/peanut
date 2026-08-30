@@ -160,6 +160,7 @@ const remoteCursors = new Map<string, RemoteCursor>();
 let planFrame: HTMLIFrameElement | null = null;
 let overlayReady = false;
 let overlayHasDraft = false;
+let missingInstructionIds = new Set<string>();
 let loadedContentVersion: number | null = null;
 let pendingContentVersion: number | null = null;
 let protocolWindow: Window | null = null;
@@ -524,6 +525,20 @@ async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<voi
   }
   if (message.type === "draft-state") {
     overlayHasDraft = message.hasDraft;
+    if (overlayHasDraft && pendingContentVersion !== null) {
+      postToOverlay({ type: "new-version" });
+    }
+    return;
+  }
+  if (message.type === "anchor-state") {
+    const next = new Set(message.missingInstructionIds);
+    if (
+      next.size !== missingInstructionIds.size ||
+      [...next].some((instructionId) => !missingInstructionIds.has(instructionId))
+    ) {
+      missingInstructionIds = next;
+      render(currentState);
+    }
     return;
   }
   if (message.type === "reload-document") {
@@ -831,6 +846,10 @@ function renderConversation(state: RoomStateView): HTMLElement {
   for (const instruction of state.instructions) {
     const bubble = userBubble(instruction.words, instruction.author, instruction.mine);
     bubble.classList.add("queued");
+    if (missingInstructionIds.has(instruction.id)) {
+      const marker = el("span", "hint pin-not-found", "not found in the new version");
+      bubble.append(marker);
+    }
     if ((instruction.mine || state.you.isHost || state.you.canSend) && !ended) {
       const footer = el("div", "bubble-footer");
       const actions = el("div", "bubble-actions");
@@ -1103,6 +1122,7 @@ export function resetView(): void {
   connectionLost = false;
   overlayReady = false;
   overlayHasDraft = false;
+  missingInstructionIds.clear();
   loadedContentVersion = null;
   pendingContentVersion = null;
   planFrame = null;
