@@ -1,6 +1,7 @@
 import { watch as watchFileChanges } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+import { DESIGN_REFERENCE, formatDesignReference } from "./design.ts";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
 import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
@@ -13,6 +14,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 //   peanut push [--session path]
 //   peanut wait [--session path]
 //   peanut serve [--state path] [--port n]
+//   peanut design [--json]
 //
 // Exit codes: 0 for a delivered round or an approve, 1 for a review
 // that ended without approve, 2 for a usage or file error.
@@ -36,7 +38,7 @@ interface Flags {
   named: Map<string, string>;
 }
 
-const BOOLEAN_FLAGS = new Set(["tunnel", "watch"]);
+const BOOLEAN_FLAGS = new Set(["json", "tunnel", "watch"]);
 
 function parseArgs(argv: string[]): Flags {
   const positional: string[] = [];
@@ -456,6 +458,13 @@ async function serve(flags: Flags): Promise<void> {
   await new Promise(() => {});
 }
 
+function design(flags: Flags): void {
+  const output = flags.named.has("json")
+    ? JSON.stringify(DESIGN_REFERENCE, null, 2)
+    : formatDesignReference();
+  console.log(output);
+}
+
 const flags = parseArgs(process.argv.slice(2));
 const command = flags.positional.shift();
 
@@ -465,7 +474,8 @@ try {
   else if (command === "push") await push(flags);
   else if (command === "wait") await wait(flags);
   else if (command === "serve") await serve(flags);
-  else fail("Usage: peanut <share|reply|push|wait|serve> ...");
+  else if (command === "design") design(flags);
+  else fail("Usage: peanut <share|reply|push|wait|serve|design> ...");
 } catch (error) {
   // A transport failure must not look like a review verdict. Exit 1
   // is reserved for a review that ended without approve.

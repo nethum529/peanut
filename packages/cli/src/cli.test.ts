@@ -88,6 +88,58 @@ async function pinAndFlush(
 }
 
 describe("peanut cli", () => {
+  test("design prints the document reference and exits cleanly", async () => {
+    const proc = run(["design"]);
+
+    expect(await proc.exited).toBe(0);
+    const output = await new Response(proc.stdout).text();
+    expect(await new Response(proc.stderr).text()).toBe("");
+    expect(output).toContain("CSS starting point");
+    expect(output).toContain(":root");
+    expect(output).toContain("Diagram embed");
+    expect(output).toContain("<svg");
+    for (const buildingBlock of [
+      "section",
+      "card",
+      "decision row",
+      "comparison table",
+      "annotated code",
+      "callout",
+    ]) {
+      expect(output).toContain(buildingBlock);
+    }
+  });
+
+  test("design --json prints the same reference as JSON", async () => {
+    const plainProc = run(["design"]);
+    expect(await plainProc.exited).toBe(0);
+    const plain = await new Response(plainProc.stdout).text();
+
+    const jsonProc = run(["design", "--json"]);
+    expect(await jsonProc.exited).toBe(0);
+    const output = await new Response(jsonProc.stdout).text();
+    expect(await new Response(jsonProc.stderr).text()).toBe("");
+
+    const reference = JSON.parse(output) as {
+      css: string;
+      diagram: string;
+      buildingBlocks: Array<{ name: string }>;
+    };
+    expect(plain).toContain(reference.css);
+    expect(plain).toContain(reference.diagram);
+    for (const block of reference.buildingBlocks) {
+      expect(plain).toContain(block.name);
+    }
+    expect(reference.buildingBlocks.map((block) => block.name)).toEqual([
+      "section",
+      "card",
+      "decision row",
+      "comparison table",
+      "annotated code",
+      "callout",
+    ]);
+  });
+
   test("share creates a hostless room, prints the link, and delivers a round", async () => {
     const plan = await writePlan();
     const proc = run(["share", plan, "--server", server.url]);
