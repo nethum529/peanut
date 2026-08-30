@@ -15,6 +15,26 @@ run peanut with the Bash tool in background mode. Read the output
 when the command finishes. Never kill a running peanut command
 just because it is quiet; quiet means the room is still thinking.
 
+## Write the document
+
+Build a structured HTML artifact by default unless the user asks for
+another format. Do not deliver a wall of prose. Put the decisions,
+risks, and open questions first, where reviewers will see them.
+
+Use sections, cards, tables, diagrams, and side-by-side comparisons to
+make the content easy to scan. Prefer these structures to long
+paragraphs. Choose the type, spacing, and colour on purpose so that the
+document has a clear hierarchy and supports its content.
+
+When the document describes an existing user interface, take
+screenshots of the real interface and embed them in the artifact. Keep
+prose for what a screenshot cannot show, such as reasoning, trade-offs,
+and open questions.
+
+Before writing HTML, run `peanut design`. For every shape the document
+will contain, run `peanut playbook <id>` with that shape's ID. Use the
+design direction and each playbook when you build the artifact.
+
 ## Start a review
 
 When the user asks for a review of a file, run in the background:
