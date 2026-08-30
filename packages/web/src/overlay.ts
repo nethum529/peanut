@@ -187,16 +187,24 @@ export function createOverlayRuntime(
     // at the underlying document and must keep the reviewer's typed text.
     closeCards();
     const stamps = new Map<HTMLElement, OverlayInstruction[]>();
+    const missingInstructionIds: string[] = [];
     for (const instruction of state.instructions) {
       if (instruction.anchor.type === "chat") continue;
       if (instruction.anchor.type === "stamp") {
         const target = restoreStamp(root, instruction.anchor as StampAnchor) as HTMLElement | null;
-        if (target) stamps.set(target, [...(stamps.get(target) ?? []), instruction]);
+        if (target) {
+          stamps.set(target, [...(stamps.get(target) ?? []), instruction]);
+        } else {
+          missingInstructionIds.push(instruction.id);
+        }
         continue;
       }
       if (instruction.anchor.type !== "range") continue;
       const segments = restoreAnchor(root, instruction.anchor as RangeAnchor);
-      if (!segments) continue;
+      if (!segments) {
+        missingInstructionIds.push(instruction.id);
+        continue;
+      }
       for (const segment of segments) {
         let node = segment.node;
         if (segment.start > 0) node = node.splitText(segment.start);
@@ -225,6 +233,7 @@ export function createOverlayRuntime(
       );
     }
     markedStamps = stamps;
+    send({ type: "anchor-state", missingInstructionIds });
   };
 
   const cursorNode = (participant: OverlayParticipant): HTMLElement => {
@@ -313,12 +322,13 @@ export function createOverlayRuntime(
     pin.type = "button";
     composer.append(input, pin);
     positionNear(composer, target);
+    setDraftActive(true);
     input.focus();
     const submit = (): void => {
       const words = input.value.trim();
       if (!words) return;
-      send({ type: "pin", words, anchor });
       setDraftActive(false);
+      send({ type: "pin", words, anchor });
       composer.remove();
       view.getSelection()?.removeAllRanges();
     };
@@ -333,7 +343,6 @@ export function createOverlayRuntime(
         composer.remove();
       }
     };
-    input.oninput = () => setDraftActive(input.value.length > 0);
   };
 
   const showNewVersionBanner = (): void => {

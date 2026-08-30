@@ -41,6 +41,7 @@ export type OverlayToChromeMessage =
   | { type: "ready" }
   | { type: "pin"; words: string; anchor: StampAnchor | RangeAnchor }
   | { type: "unpin"; instructionId: string }
+  | { type: "anchor-state"; missingInstructionIds: string[] }
   | { type: "hover"; selector: string | null }
   | { type: "cursor"; x: number; y: number }
   | { type: "cursor-leave" }
@@ -149,6 +150,12 @@ export function isOverlayToChromeMessage(value: unknown): value is OverlayToChro
     );
   }
   if (value.type === "unpin") return typeof value.instructionId === "string";
+  if (value.type === "anchor-state") {
+    return (
+      Array.isArray(value.missingInstructionIds) &&
+      value.missingInstructionIds.every((instructionId) => typeof instructionId === "string")
+    );
+  }
   if (value.type === "hover") {
     return value.selector === null || typeof value.selector === "string";
   }
