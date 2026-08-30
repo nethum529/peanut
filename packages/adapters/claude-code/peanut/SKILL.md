@@ -35,6 +35,24 @@ Before writing HTML, run `peanut design`. For every shape the document
 will contain, run `peanut playbook <id>` with that shape's ID. Use the
 design direction and each playbook when you build the artifact.
 
+## Choose the document look
+
+Before writing a review document, choose its look in this order. Stop
+at the first step that gives you a direction:
+
+1. If the user named a look or design system, use it.
+2. Inspect the project that the document is about. This may not be the
+   current working directory. Match that project's design system by
+   checking its theme configuration, CSS variables or design tokens,
+   component library, brand assets, and existing styled pages. If the
+   document previews or proposes the product's UI, render it in the
+   product's own look.
+3. If the first two steps give no direction, use the Peanut default
+   from `peanut design`.
+
+When you share the document, tell the user which step supplied its look
+and why.
+
 ## Start a review
 
 When the user asks for a review of a file, run in the background:
