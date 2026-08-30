@@ -4,8 +4,6 @@ Peanut is a local, browser-based, multiplayer review surface for coding
 agents. An agent shares a plan or a live UI. People join by link, pin
 instructions to the content, and the agent applies them in rounds.
 
-![Two reviewers sending a feedback round to an agent](docs/peanut-demo.gif)
-
 ## How it works
 
 1. An agent shares a Markdown file or live UI.
