@@ -101,6 +101,7 @@ export class RoomError extends Error {
     readonly code:
       | "room_not_found"
       | "not_a_participant"
+      | "host_taken"
       | "bad_name"
       | "bad_instruction"
       | "instruction_not_found"
@@ -180,6 +181,25 @@ export class RoomStore {
       if (existing) return existing;
     }
     return this.addParticipant(room, normalizeName(input.name), room.participants.size === 0);
+  }
+
+  // The web client uses this guarded path after an empty room reports no
+  // participants. The check and insert stay synchronous so two tabs can not
+  // both become host after observing the same empty state.
+  claimHost(roomId: string, sessionId: string | undefined): Participant {
+    const room = this.getRoom(roomId);
+    if (sessionId) {
+      const existing = room.participants.get(sessionId);
+      if (existing) return existing;
+    }
+    if (room.participants.size !== 0) {
+      throw new RoomError("host_taken", "the room already has a host");
+    }
+    return this.addParticipant(room, "Host", true);
+  }
+
+  participantCount(roomId: string): number {
+    return this.getRoom(roomId).participants.size;
   }
 
   participant(roomId: string, sessionId: string | undefined): Participant {
@@ -394,6 +414,29 @@ export class RoomStore {
     if (!target) throw new RoomError("not_a_participant", `no participant ${participantId}`);
     if (target.isHost) throw new RoomError("not_allowed", "the host grant can not change");
     target.canSend = canSend;
+  }
+
+  renameParticipant(
+    roomId: string,
+    sessionId: string | undefined,
+    participantId: string,
+    rawName: string,
+  ): Participant {
+    const room = this.getRoom(roomId);
+    const participant = this.participant(roomId, sessionId);
+    if (participant.publicId !== participantId) {
+      throw new RoomError("not_allowed", "participants may only rename themselves");
+    }
+    const name = normalizeName(rawName);
+    participant.name = name;
+    // Flushed rounds snapshot their authors so history survives participant
+    // changes. Keep those snapshots current when their author is renamed.
+    for (const round of room.rounds) {
+      for (const instruction of round.instructions) {
+        if (instruction.author.id === participant.publicId) instruction.author.name = name;
+      }
+    }
+    return participant;
   }
 
   agent(roomId: string, token: string | undefined): Room {

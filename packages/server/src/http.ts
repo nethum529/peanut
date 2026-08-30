@@ -132,17 +132,33 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   if (request.method === "POST" && joinMatch) {
     const roomId = joinMatch[1]!;
     const body = await readJson(request);
-    const participant = store.join(roomId, {
-      name: stringField(body, "name"),
-      sessionId: sessionFromCookie(request, roomId),
-    });
+    const sessionId = sessionFromCookie(request, roomId);
+    const participant =
+      body.claimHost === true
+        ? store.claimHost(roomId, sessionId)
+        : store.join(roomId, { name: stringField(body, "name"), sessionId });
     return json(store.stateFor(roomId, participant.sessionId), 200, sessionCookie(roomId, participant));
   }
 
   const stateMatch = path.match(/^\/api\/rooms\/([^/]+)\/state$/);
   if (request.method === "GET" && stateMatch) {
     const roomId = stateMatch[1]!;
-    const participant = store.participant(roomId, sessionFromCookie(request, roomId));
+    let participant: Participant;
+    try {
+      participant = store.participant(roomId, sessionFromCookie(request, roomId));
+    } catch (error) {
+      if (error instanceof RoomError && error.code === "not_a_participant") {
+        return json(
+          {
+            error: error.code,
+            message: error.message,
+            participantCount: store.participantCount(roomId),
+          },
+          403,
+        );
+      }
+      throw error;
+    }
     return json(store.stateFor(roomId, participant.sessionId));
   }
 
@@ -220,6 +236,19 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
       canSend,
     );
     return json({ granted: canSend });
+  }
+
+  const participantMatch = path.match(/^\/api\/rooms\/([^/]+)\/participants\/([^/]+)$/);
+  if (request.method === "PATCH" && participantMatch) {
+    const roomId = participantMatch[1]!;
+    const body = await readJson(request);
+    const participant = store.renameParticipant(
+      roomId,
+      sessionFromCookie(request, roomId),
+      participantMatch[2]!,
+      stringField(body, "name"),
+    );
+    return json(store.stateFor(roomId, participant.sessionId));
   }
 
   const endMatch = path.match(/^\/api\/rooms\/([^/]+)\/end$/);
@@ -498,6 +527,7 @@ function statusFor(code: RoomError["code"]): number {
     case "not_a_participant":
     case "not_allowed":
       return 403;
+    case "host_taken":
     case "room_ended":
     case "round_pending":
     case "bad_ack":

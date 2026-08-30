@@ -307,6 +307,15 @@ function showJoinDialog(roomId: string): void {
   };
 }
 
+async function claimHost(roomId: string): Promise<RoomStateView | null> {
+  const response = await fetch(`/api/rooms/${roomId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ claimHost: true }),
+  });
+  if (!response.ok) return null;
+  return (await response.json()) as RoomStateView;
+}
+
 function postToOverlay(message: ChromeToOverlayMessage): void {
   planFrame?.contentWindow?.postMessage(message, "*");
 }
@@ -637,7 +646,12 @@ function render(state: RoomStateView): void {
     const row = el("div", "person-row");
     const dot = el("span", "person-dot");
     setAuthorColor(dot, participant.color, "author-dot");
-    row.append(dot, el("span", "person-name", participant.name));
+    row.append(dot);
+    if (state.you.isHost && participant.you) {
+      row.append(renderParticipantRename(state, participant));
+    } else {
+      row.append(el("span", "person-name", participant.name));
+    }
     if (state.status !== "ended" && state.you.isHost && !participant.isHost) {
       row.append(renderSendPermissionSwitch(state, participant));
     }
@@ -664,6 +678,69 @@ function render(state: RoomStateView): void {
   }
   postOverlayState();
   syncRoomBanner();
+}
+
+function renderParticipantRename(
+  state: RoomStateView,
+  participant: ParticipantView,
+): HTMLFormElement {
+  const form = el("form", "participant-rename");
+  const inputId = `participant-name-${participant.id}`;
+  const errorId = `${inputId}-error`;
+  const label = el("label", "visually-hidden", "Your name");
+  const input = el("input", "person-name-input");
+  const button = el("button", "person-name-save", "Save");
+  const error = el("span", "person-name-error");
+  label.htmlFor = inputId;
+  input.id = inputId;
+  input.name = "name";
+  input.autocomplete = "name";
+  input.maxLength = 40;
+  input.value = participant.name;
+  input.setAttribute("aria-describedby", errorId);
+  button.type = "submit";
+  error.id = errorId;
+  error.setAttribute("role", "status");
+  form.append(label, input, button, error);
+
+  const refuse = (message: string) => {
+    input.value = participant.name;
+    input.setAttribute("aria-invalid", "true");
+    error.textContent = message;
+    input.focus();
+    input.select();
+  };
+  input.oninput = () => {
+    input.removeAttribute("aria-invalid");
+    error.textContent = "";
+  };
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) {
+      refuse("Name cannot be empty.");
+      return;
+    }
+    button.disabled = true;
+    try {
+      const response = await actionRequest(
+        `/api/rooms/${state.id}/participants/${participant.id}`,
+        { method: "PATCH", body: JSON.stringify({ name }) },
+      );
+      if (!response?.ok) {
+        const body = await response?.json().catch(() => ({}));
+        refuse(body?.message ?? "Could not save the name.");
+        return;
+      }
+      const renamed = (await response.json()) as RoomStateView;
+      lastRendered = JSON.stringify(renamed);
+      render(renamed);
+      showToast("Name updated.");
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  };
+  return form;
 }
 
 function verdictLabel(verdict: string): string {
@@ -1149,6 +1226,14 @@ export async function boot(): Promise<void> {
     if (response.ok) {
       start(roomId, (await response.json()) as RoomStateView);
     } else if (response.status === 403) {
+      const body = await response.json().catch(() => ({}));
+      if (body.participantCount === 0) {
+        const state = await claimHost(roomId);
+        if (state) {
+          start(roomId, state);
+          return;
+        }
+      }
       showJoinDialog(roomId);
     } else {
       showMessage("Room not found", "This link does not point to a live room.");
