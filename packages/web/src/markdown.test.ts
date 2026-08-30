@@ -53,4 +53,39 @@ describe("renderMarkdown", () => {
   test("an unclosed fence consumes to the end without error", () => {
     expect(renderMarkdown("```\ncode")).toBe("<pre><code>code</code></pre>");
   });
+
+  test("renders a plain table with inline formatting in its cells", () => {
+    expect(
+      renderMarkdown(
+        "| Item | Value |\n|---|---|\n| **Width** | `4px` |\n| Height | 56px |",
+      ),
+    ).toBe(
+      "<table><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>" +
+        "<tr><td><strong>Width</strong></td><td><code>4px</code></td></tr>" +
+        "<tr><td>Height</td><td>56px</td></tr></tbody></table>",
+    );
+  });
+
+  test("renders table column alignment", () => {
+    expect(renderMarkdown("| Left | Right | Centre |\n|:---|---:|:---:|\n| a | b | c |")).toBe(
+      '<table><thead><tr><th style="text-align: left">Left</th>' +
+        '<th style="text-align: right">Right</th>' +
+        '<th style="text-align: center">Centre</th></tr></thead><tbody>' +
+        '<tr><td style="text-align: left">a</td>' +
+        '<td style="text-align: right">b</td>' +
+        '<td style="text-align: center">c</td></tr></tbody></table>',
+    );
+  });
+
+  test("keeps a pipe line without a delimiter row as a paragraph", () => {
+    expect(renderMarkdown("| not | a | table |\nplain text")).toBe(
+      "<p>| not | a | table | plain text</p>",
+    );
+  });
+
+  test("renders a run of quoted lines as one blockquote", () => {
+    expect(renderMarkdown("> Keep **this**\n> and `that`")).toBe(
+      "<blockquote><p>Keep <strong>this</strong> and <code>that</code></p></blockquote>",
+    );
+  });
 });

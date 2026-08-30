@@ -71,6 +71,39 @@ html[data-theme="light"] {
   --peanut-author-lighten: 0%;
 }
 
+body.plan table {
+  width: 100%;
+  margin: 1.5em 0;
+  overflow: hidden;
+  border: 1px solid var(--document-line);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 8px;
+}
+
+/* A rendered table is one document block, so pins target the table
+   instead of an individual row or cell. */
+body.plan table * { pointer-events: none; }
+
+body.plan th,
+body.plan td {
+  padding: 8px 12px;
+  border-right: 1px solid var(--document-line);
+  border-bottom: 1px solid var(--document-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+body.plan th {
+  background: var(--document-paper);
+  font-weight: 600;
+}
+
+body.plan tr:last-child td { border-bottom: 0; }
+
+body.plan th:last-child,
+body.plan td:last-child { border-right: 0; }
+
 .stamp-hover {
   outline: 1px solid var(--peanut-accent-border) !important;
   outline-offset: 4px !important;
