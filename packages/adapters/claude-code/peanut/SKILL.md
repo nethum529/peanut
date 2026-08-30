@@ -21,6 +21,12 @@ Build a structured HTML artifact by default unless the user asks for
 another format. Do not deliver a wall of prose. Put the decisions,
 risks, and open questions first, where reviewers will see them.
 
+When the user asks for a review of content you are about to write,
+share the HTML artifact. Write review artifacts under `.peanut/` in
+the working directory unless the user names another location. Use
+Markdown only as an explicit fallback when HTML is not practical or
+the user requests Markdown.
+
 Use sections, cards, tables, diagrams, and side-by-side comparisons to
 make the content easy to scan. Prefer these structures to long
 paragraphs. Choose the type, spacing, and colour on purpose so that the

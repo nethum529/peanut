@@ -10,7 +10,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 // final verdict, prints it, and exits. The room lives in a session
 // file, so a later invocation continues the same review.
 //
-//   peanut share <file> [--watch] [--title t] [--server url] [--session path]
+//   peanut share <file> [--watch] [--no-hint] [--title t] [--server url] [--session path]
 //   peanut reply <message> [--meta m] [--session path]
 //   peanut push [--session path]
 //   peanut wait [--session path]
@@ -40,7 +40,7 @@ interface Flags {
   named: Map<string, string>;
 }
 
-const BOOLEAN_FLAGS = new Set(["json", "tunnel", "watch"]);
+const BOOLEAN_FLAGS = new Set(["json", "no-hint", "tunnel", "watch"]);
 
 function parseArgs(argv: string[]): Flags {
   const positional: string[] = [];
@@ -342,13 +342,37 @@ async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
   }
 }
 
+function markdownBenefitsFromHtml(content: string): boolean {
+  const hasPipeTable =
+    /^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$/m.test(
+      content,
+    );
+  const hasImage = /!\[[^\r\n]*?\](?:\([^\r\n)]+\)|\[[^\r\n]+\])/.test(content);
+  const hasDiagramFence =
+    /^(?: {0,3})(?:`{3,}|~{3,})[ \t]*(?:diagram|mermaid|plantuml|graphviz|dot)\b[^\r\n]*$/im.test(
+      content,
+    );
+  return hasPipeTable || hasImage || hasDiagramFence;
+}
+
 async function share(flags: Flags): Promise<never> {
   const filePath = flags.positional[0];
-  if (!filePath) fail("Usage: peanut share <file> [--watch] [--title t] [--server url]");
+  if (!filePath) {
+    fail("Usage: peanut share <file> [--watch] [--no-hint] [--title t] [--server url]");
+  }
   const file = Bun.file(filePath);
   if (!(await file.exists())) fail(`No such file: ${filePath}`);
   const content = await file.text();
   const contentType = /\.html?$/i.test(filePath) ? "html" : "markdown";
+  if (
+    contentType === "markdown" &&
+    !flags.named.has("no-hint") &&
+    markdownBenefitsFromHtml(content)
+  ) {
+    console.error(
+      'Hint: Tables, images, and diagrams render better in an HTML artifact. Try "peanut design" or "peanut playbook". Sharing the Markdown file anyway.',
+    );
+  }
 
   let server = flags.named.get("server") ?? "";
   let serverPid: number | undefined;
