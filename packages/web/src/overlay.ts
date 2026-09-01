@@ -260,7 +260,7 @@ export function createOverlayRuntime(
     node.style.top = `${cursor.y * 100}%`;
     node.classList.toggle("right-edge", cursor.x > 0.75);
     node.classList.toggle("bottom-edge", cursor.y > 0.9);
-    node.classList.toggle("stale", cursor.stale);
+    node.classList.toggle("leaving", cursor.leaving);
   };
 
   const renderCursors = (): void => {

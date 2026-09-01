@@ -22,7 +22,7 @@ export interface OverlayCursor {
   participantId: string;
   x: number;
   y: number;
-  stale: boolean;
+  leaving: boolean;
 }
 
 export type ChromeToOverlayMessage =
@@ -126,7 +126,7 @@ export function isChromeToOverlayMessage(value: unknown): value is ChromeToOverl
           typeof cursor.participantId === "string" &&
           finiteUnit(cursor.x) &&
           finiteUnit(cursor.y) &&
-          typeof cursor.stale === "boolean",
+          typeof cursor.leaving === "boolean",
       )
     );
   }

@@ -57,6 +57,16 @@ function nextMessage(socket: WebSocket, timeoutMs = 1000): Promise<Uint8Array> {
   });
 }
 
+function nextTextMessage(socket: WebSocket, timeoutMs = 1000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("no message")), timeoutMs);
+    socket.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(String(event.data));
+    };
+  });
+}
+
 describe("relay", () => {
   test("frames fan out to peers in the room without echoing to the sender", async () => {
     const { roomId, hostCookie } = await createRoom();
@@ -128,6 +138,25 @@ describe("relay", () => {
     expect(await waiting).toEqual(new Uint8Array([7, 7]));
     host.close();
     alex.close();
+  });
+
+  test("a disconnect announces that the participant left", async () => {
+    const { roomId, hostCookie } = await createRoom();
+    const guestCookie = await join(roomId, "Sam");
+    const host = await connect(roomId, hostCookie);
+    const guest = await connect(roomId, guestCookie);
+    const guestId = [...server.store.getRoom(roomId).participants.values()].find(
+      (participant) => participant.name === "Sam",
+    )!.publicId;
+    const waiting = nextTextMessage(host);
+
+    guest.close();
+
+    expect(JSON.parse(await waiting)).toEqual({
+      type: "cursor-leave",
+      participantId: guestId,
+    });
+    host.close();
   });
 
   test("text frames relay unchanged too", async () => {

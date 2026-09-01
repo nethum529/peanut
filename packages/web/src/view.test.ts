@@ -1260,7 +1260,7 @@ describe("chat sidebar", () => {
 });
 
 describe("live cursors", () => {
-  test("shows a peer at normalized plan coordinates with their state color and name", async () => {
+  test("keeps a still peer at full strength past the old stale window", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
     const guest = await joinRoom(room.roomId, "Sam");
     await openExistingRoom(room.roomId, cookie);
@@ -1281,14 +1281,63 @@ describe("live cursors", () => {
       .filter((message: any) => message.type === "cursors")
       .at(-1) as any;
     expect(cursorMessage.cursors).toEqual([
-      { participantId: guest.participant.id, x: 0.25, y: 0.75, stale: false },
+      { participantId: guest.participant.id, x: 0.25, y: 0.75, leaving: false },
     ]);
 
-    await Bun.sleep(3200);
-    const faded = overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any;
-    expect(faded.cursors).toEqual([]);
+    await Bun.sleep(4000);
+    const still = overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any;
+    expect(still.cursors).toEqual([
+      { participantId: guest.participant.id, x: 0.25, y: 0.75, leaving: false },
+    ]);
     peer.close();
-  }, 5000);
+  }, 6000);
+
+  test("removes a peer cursor after cursor-leave", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+
+    peer.send(
+      JSON.stringify({
+        type: "cursor",
+        participantId: guest.participant.id,
+        x: 0.25,
+        y: 0.75,
+      }),
+    );
+    await Bun.sleep(50);
+    peer.send(
+      JSON.stringify({ type: "cursor-leave", participantId: guest.participant.id }),
+    );
+    await Bun.sleep(250);
+
+    const cursors = overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any;
+    expect(cursors.cursors).toEqual([]);
+    peer.close();
+  });
+
+  test("removes a peer cursor after their relay disconnects", async () => {
+    const room = await createRoom("# Plan\n\nfirst paragraph");
+    const guest = await joinRoom(room.roomId, "Sam");
+    await openExistingRoom(room.roomId, cookie);
+    const peer = await connectRelay(room.roomId, guest.cookie);
+
+    peer.send(
+      JSON.stringify({
+        type: "cursor",
+        participantId: guest.participant.id,
+        x: 0.25,
+        y: 0.75,
+      }),
+    );
+    await Bun.sleep(50);
+    peer.close();
+    await Bun.sleep(250);
+
+    const cursors = overlayMessages.filter((message: any) => message.type === "cursors").at(-1) as any;
+    expect(cursors.cursors).toEqual([]);
+  });
 
   test("rejects invalid, unknown, and self-asserted cursor frames", async () => {
     const room = await createRoom("# Plan\n\nfirst paragraph");
