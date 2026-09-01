@@ -26,12 +26,13 @@ const FONT_PATHS = new Set([
 interface RelayData {
   roomId: string;
   sessionId: string;
+  participantId: string;
 }
 
 export function startServer(options: { port?: number } = {}): PeanutServer {
   const store = new RoomStore();
-  // One set of live sockets per room. The relay never decodes frames; it
-  // only fans them out to the other members of the same room.
+  // One set of live sockets per room. Incoming frames are passed through
+  // unchanged. The relay also announces when a participant disconnects.
   const relayRooms = new Map<string, Set<Bun.ServerWebSocket<RelayData>>>();
 
   const server = Bun.serve<RelayData>({
@@ -50,7 +51,11 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
           // no socket.
           const participant = store.participant(roomId, sessionFromCookie(request, roomId));
           const upgraded = bunServer.upgrade(request, {
-            data: { roomId, sessionId: participant.sessionId },
+            data: {
+              roomId,
+              sessionId: participant.sessionId,
+              participantId: participant.publicId,
+            },
           });
           if (upgraded) return undefined as unknown as Response;
           return json({ error: "upgrade_failed" }, 400);
@@ -83,6 +88,16 @@ export function startServer(options: { port?: number } = {}): PeanutServer {
         const set = relayRooms.get(ws.data.roomId);
         if (!set) return;
         set.delete(ws);
+        const participantStillConnected = [...set].some(
+          (peer) => peer.data.sessionId === ws.data.sessionId,
+        );
+        if (!participantStillConnected) {
+          const leave = JSON.stringify({
+            type: "cursor-leave",
+            participantId: ws.data.participantId,
+          });
+          for (const peer of set) peer.send(leave);
+        }
         if (set.size === 0) relayRooms.delete(ws.data.roomId);
       },
     },

@@ -239,7 +239,7 @@ mark.pin {
   filter: drop-shadow(0 1px 1px var(--peanut-shadow));
 }
 
-.live-cursor.peanut-overlay.stale { opacity: 0; }
+.live-cursor.peanut-overlay.leaving { opacity: 0; }
 
 .live-cursor.peanut-overlay svg {
   position: absolute;

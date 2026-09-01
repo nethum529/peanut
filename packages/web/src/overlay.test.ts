@@ -225,20 +225,20 @@ describe("document overlay", () => {
 
     receive({
       type: "cursors",
-      cursors: [{ participantId: "sam", x: 0.25, y: 0.75, stale: false }],
+      cursors: [{ participantId: "sam", x: 0.25, y: 0.75, leaving: false }],
     });
     const first = body.querySelector(".live-cursor") as HTMLElement;
     expect(first.style.left).toBe("25%");
     expect(first.style.top).toBe("75%");
     receive({
       type: "cursors",
-      cursors: [{ participantId: "sam", x: 0.5, y: 0.9, stale: true }],
+      cursors: [{ participantId: "sam", x: 0.5, y: 0.9, leaving: true }],
     });
     const updated = body.querySelector(".live-cursor") as HTMLElement;
     expect(updated).toBe(first);
     expect(updated.style.left).toBe("50%");
     expect(updated.style.top).toBe("90%");
-    expect(updated.classList.contains("stale")).toBe(true);
+    expect(updated.classList.contains("leaving")).toBe(true);
     expect(body.querySelector(".peanut-cursor-layer")).toBe(layer);
   });
 
@@ -250,7 +250,7 @@ describe("document overlay", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
 
     receive(state());
-    receive({ type: "cursors", cursors: [{ participantId: "me", x: 0.5, y: 0.5, stale: false }] });
+    receive({ type: "cursors", cursors: [{ participantId: "me", x: 0.5, y: 0.5, leaving: false }] });
     expect(document.querySelector(".live-cursor")).toBeNull();
     const link = document.createElement("link");
     link.href = "/overlay.css";

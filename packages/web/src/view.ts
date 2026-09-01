@@ -40,7 +40,6 @@ interface RoomStateView {
 
 const POLL_MS = 2000;
 const CURSOR_SEND_MS = 40;
-const CURSOR_STALE_MS = 3000;
 const CURSOR_FADE_MS = 180;
 const TOAST_VISIBLE_MS = 3000;
 const TOAST_EXIT_MS = 400;
@@ -60,7 +59,6 @@ interface CursorLeaveMessage {
 interface RemoteCursor {
   x: number;
   y: number;
-  staleTimer: ReturnType<typeof setTimeout>;
   removeTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -349,7 +347,7 @@ function postRemoteCursors(): void {
       participantId,
       x: cursor.x,
       y: cursor.y,
-      stale: cursor.removeTimer !== null,
+      leaving: cursor.removeTimer !== null,
     })),
   });
 }
@@ -357,13 +355,12 @@ function postRemoteCursors(): void {
 function removeRemoteCursor(participantId: string): void {
   const cursor = remoteCursors.get(participantId);
   if (!cursor) return;
-  clearTimeout(cursor.staleTimer);
   if (cursor.removeTimer !== null) clearTimeout(cursor.removeTimer);
   remoteCursors.delete(participantId);
   postRemoteCursors();
 }
 
-function fadeRemoteCursor(participantId: string): void {
+function leaveRemoteCursor(participantId: string): void {
   const cursor = remoteCursors.get(participantId);
   if (!cursor || cursor.removeTimer !== null) return;
   cursor.removeTimer = setTimeout(() => removeRemoteCursor(participantId), CURSOR_FADE_MS);
@@ -395,7 +392,7 @@ function receiveCursorFrame(data: unknown): void {
   );
   if (!participant || participant.you) return;
   if (message.type === "cursor-leave") {
-    fadeRemoteCursor(participant.id);
+    leaveRemoteCursor(participant.id);
     return;
   }
   if (
@@ -414,12 +411,10 @@ function receiveCursorFrame(data: unknown): void {
 
   const previous = remoteCursors.get(participant.id);
   if (previous) {
-    clearTimeout(previous.staleTimer);
     if (previous.removeTimer !== null) clearTimeout(previous.removeTimer);
     previous.x = message.x;
     previous.y = message.y;
     previous.removeTimer = null;
-    previous.staleTimer = setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS);
     postRemoteCursors();
     return;
   }
@@ -427,7 +422,6 @@ function receiveCursorFrame(data: unknown): void {
   const cursor: RemoteCursor = {
     x: message.x,
     y: message.y,
-    staleTimer: setTimeout(() => fadeRemoteCursor(participant.id), CURSOR_STALE_MS),
     removeTimer: null,
   };
   remoteCursors.set(participant.id, cursor);
