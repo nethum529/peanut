@@ -21,6 +21,15 @@ Build a structured HTML artifact by default unless the user asks for
 another format. Do not deliver a wall of prose. Put the decisions,
 risks, and open questions first, where reviewers will see them.
 
+Target about 400 words of visible text. Never exceed 700 unless the
+user asks for a detailed or complete document, or gives a longer
+length. In those cases, this budget does not apply.
+
+Every block must help the reviewer decide something. Cut anything that
+only informs. Keep each prose paragraph to 3 sentences at most. Lead
+every section with its conclusion. Put a fact that fits in a table row
+there, not in a paragraph. State each point in one place only.
+
 When the user asks for a review of content you are about to write,
 share the HTML artifact. Write review artifacts under `.peanut/` in
 the working directory unless the user names another location. Use

@@ -22,6 +22,7 @@ import { copyToClipboard, startTunnel } from "./tunnel.ts";
 // that ended without approve, 2 for a usage or file error.
 
 const POLL_TIMEOUT_MS = 25_000;
+const DOCUMENT_WORD_BUDGET = 700;
 
 interface Session {
   server: string;
@@ -355,6 +356,18 @@ function markdownBenefitsFromHtml(content: string): boolean {
   return hasPipeTable || hasImage || hasDiagramFence;
 }
 
+function countVisibleWords(content: string, contentType: "html" | "markdown"): number {
+  const visibleText =
+    contentType === "html"
+      ? content
+          .replace(/<!--[\s\S]*?(?:-->|$)/g, " ")
+          .replace(/<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, " ")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/&(?:#\d+|#x[\da-f]+|[a-z][\w-]*);/gi, " ")
+      : content;
+  return visibleText.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+}
+
 async function share(flags: Flags): Promise<never> {
   const filePath = flags.positional[0];
   if (!filePath) {
@@ -364,14 +377,18 @@ async function share(flags: Flags): Promise<never> {
   if (!(await file.exists())) fail(`No such file: ${filePath}`);
   const content = await file.text();
   const contentType = /\.html?$/i.test(filePath) ? "html" : "markdown";
-  if (
-    contentType === "markdown" &&
-    !flags.named.has("no-hint") &&
-    markdownBenefitsFromHtml(content)
-  ) {
-    console.error(
-      'Hint: Tables, images, and diagrams render better in an HTML artifact. Try "peanut design" or "peanut playbook". Sharing the Markdown file anyway.',
-    );
+  if (!flags.named.has("no-hint")) {
+    if (contentType === "markdown" && markdownBenefitsFromHtml(content)) {
+      console.error(
+        'Hint: Tables, images, and diagrams render better in an HTML artifact. Try "peanut design" or "peanut playbook". Sharing the Markdown file anyway.',
+      );
+    }
+    const wordCount = countVisibleWords(content, contentType);
+    if (wordCount > DOCUMENT_WORD_BUDGET) {
+      console.error(
+        `Note: This document has ${wordCount} visible words; the default budget is ${DOCUMENT_WORD_BUDGET}. Sharing it anyway.`,
+      );
+    }
   }
 
   let server = flags.named.get("server") ?? "";

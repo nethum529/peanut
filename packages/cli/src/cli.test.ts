@@ -253,6 +253,50 @@ describe("peanut cli", () => {
     expect(result.stderr).toBe("");
   });
 
+  test("share notes the visible word count when a document exceeds the budget", async () => {
+    const result = await shareAndEnd("long.html", `<p>${"word ".repeat(701)}</p>`);
+
+    expect(result.stderr).toContain("701 visible words");
+    expect(result.stderr).toContain("budget is 700");
+    expect(result.stdout).not.toContain("701 visible words");
+  });
+
+  test("share does not note a document at the budget", async () => {
+    const result = await shareAndEnd("short.html", `<p>${"word ".repeat(700)}</p>`);
+
+    expect(result.stderr).toBe("");
+  });
+
+  test("share --no-hint suppresses the length note", async () => {
+    const result = await shareAndEnd(
+      "long.html",
+      `<p>${"word ".repeat(701)}</p>`,
+      ["--no-hint"],
+    );
+
+    expect(result.stderr).toBe("");
+  });
+
+  test("the visible word counter ignores HTML markup, styles, and scripts", async () => {
+    const hidden = "hidden ".repeat(701);
+    const result = await shareAndEnd(
+      "markup.html",
+      `<style>${hidden}</style><script>const text = "${hidden}";</script><p data-note="${hidden}">Three visible words</p>`,
+    );
+
+    expect(result.stderr).toBe("");
+  });
+
+  test("the word counter treats Markdown as plain text", async () => {
+    const result = await shareAndEnd(
+      "literal.md",
+      `<script>${"word ".repeat(701)}</script>`,
+    );
+
+    expect(result.stderr).toContain("visible words");
+    expect(result.stderr).toContain("budget is 700");
+  });
+
   test("reply lands on the last round and the verdict ends with exit 0 on approve", async () => {
     const plan = await writePlan();
     const first = run(["share", plan, "--server", server.url]);
