@@ -24,6 +24,8 @@ const PLAYBOOKS: Record<PlaybookId, Playbook> = {
 
 Use this shape to explain how work will move from the current state to a clear result.
 
+Length ceiling: 450 visible words. Cut background that does not change a step or dependency first.
+
 ## Blocks to use
 - Open with a ${BLOCK.section} that states the goal and scope.
 - Put each phase in a ${BLOCK.card} with its action, owner, and completion check.
@@ -46,6 +48,8 @@ Use this shape to explain how work will move from the current state to a clear r
     guidance: `# Comparison playbook
 
 Use this shape when a reviewer must see meaningful differences between two or more options.
+
+Length ceiling: 350 visible words. Cut criteria that do not affect the choice first.
 
 ## Blocks to use
 - Start with a ${BLOCK.section} that names the choice and its constraints.
@@ -72,6 +76,8 @@ Decision: use a queue because failure isolation is required.`,
 
 Use this shape for repeated facts that share the same fields and need quick lookup.
 
+Length ceiling: 250 visible words. Cut rows that do not support lookup or a decision first.
+
 ## Blocks to use
 - Use a ${BLOCK.section} to state what the rows represent.
 - Put the data in a ${BLOCK.comparisonTable} with short, specific headers.
@@ -96,6 +102,8 @@ Callout: limits apply per user.`,
     guidance: `# Diagram playbook
 
 Use this shape when position, direction, or connection explains the subject better than prose.
+
+Length ceiling: 180 visible words. Cut prose that repeats the diagram first.
 
 ## Blocks to use
 - Use a ${BLOCK.section} to name the question the diagram answers.
@@ -124,6 +132,8 @@ Callout: Save runs only after validation succeeds.`,
 
 Use this shape to review an implementation detail, interface, or behavior expressed in code.
 
+Length ceiling: 300 visible words. Cut unchanged setup and line-by-line narration first.
+
 ## Blocks to use
 - Start with a ${BLOCK.section} that states the behavior and relevant constraint.
 - Use ${BLOCK.annotatedCode} for the smallest complete excerpt.
@@ -149,6 +159,8 @@ Expected result: no request starts more than three attempts.`,
 
 Use this shape when a choice needs review now and must remain understandable later.
 
+Length ceiling: 300 visible words. Cut history that did not affect the choice first.
+
 ## Blocks to use
 - Open with a ${BLOCK.section} that states the decision and current status.
 - Use a ${BLOCK.comparisonTable} for the options and decisive criteria.
@@ -171,6 +183,8 @@ Follow-up: remove it when the review ends.`,
     guidance: `# Report playbook
 
 Use this shape to explain what was examined, what was found, and what should happen next.
+
+Length ceiling: 600 visible words. Cut low-impact findings and repeated evidence first.
 
 ## Blocks to use
 - Use a ${BLOCK.section} for each of scope, findings, and next actions.

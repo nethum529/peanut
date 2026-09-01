@@ -28,6 +28,7 @@ describe("peanut playbook", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim().length).toBeGreaterThan(0);
       expect(result.stdout).toContain(`# ${id[0]!.toUpperCase()}${id.slice(1)} playbook`);
+      expect(result.stdout).toMatch(/Length ceiling: \d+ visible words\. Cut .+ first\./);
       expect(result.stderr).toBe("");
     });
   }
