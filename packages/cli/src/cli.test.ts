@@ -122,7 +122,9 @@ describe("peanut cli", () => {
     expect(output).toContain("CSS starting point");
     expect(output).toContain(":root");
     expect(output).toContain("Diagram embed");
-    expect(output).toContain("<svg");
+    expect(output).toContain('data-peanut-diagram="flow"');
+    expect(output).toContain('data-direction="right"');
+    expect(output).not.toContain("<svg");
     expect(output).toContain("Open question block");
     expect(output).toContain('data-peanut-question="session-storage"');
     for (const buildingBlock of [
@@ -133,6 +135,7 @@ describe("peanut cli", () => {
       "comparison table",
       "annotated code",
       "callout",
+      "diagram",
     ]) {
       expect(output).toContain(buildingBlock);
     }
@@ -168,6 +171,7 @@ describe("peanut cli", () => {
       "comparison table",
       "annotated code",
       "callout",
+      "diagram",
     ]);
   });
 

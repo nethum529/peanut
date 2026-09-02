@@ -15,6 +15,7 @@ import {
   type OverlayParticipant,
   type OverlayToChromeMessage,
 } from "./protocol.ts";
+import { renderDiagramBlocks } from "./diagram.ts";
 
 // SPAN belongs with inline markup so word-level wrappers still stamp their
 // containing block. A document made only of spans therefore needs a block
@@ -66,6 +67,10 @@ export function stampTarget(root: HTMLElement, node: EventTarget | null): HTMLEl
   if (!node || (node as Node).nodeType !== 1) return null;
   let target = node as Element;
   if (target.closest(".peanut-overlay")) return null;
+  const diagram = target.closest<HTMLElement>(
+    '[data-peanut-diagram][data-peanut-diagram-rendered="true"]',
+  );
+  if (diagram && diagram !== root && root.contains(diagram)) return diagram;
   while (target !== root && INLINE_TAGS.has(target.tagName)) target = target.parentElement!;
   if (
     !target ||
@@ -85,6 +90,7 @@ export function createOverlayRuntime(
   host: Window = view.parent,
 ): OverlayRuntime {
   const root = document.body;
+  renderDiagramBlocks(document);
   let state: Extract<ChromeToOverlayMessage, { type: "state" }> = {
     type: "state",
     instructions: [],
@@ -379,6 +385,11 @@ export function createOverlayRuntime(
 
   const snapshotHtml = (): string => {
     const clone = root.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll<HTMLElement>("[data-peanut-diagram]").forEach((block) => {
+      block.querySelector(":scope > .peanut-diagram-canvas")?.remove();
+      delete block.dataset.peanutDiagramRendered;
+      delete block.dataset.peanutDiagramInvalid;
+    });
     clone
       .querySelectorAll(
         '.peanut-overlay, link[href="/overlay.css"], script[src="/overlay.js"]',

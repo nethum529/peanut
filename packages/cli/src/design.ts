@@ -19,6 +19,7 @@ export const DESIGN_BLOCK_NAMES = {
   comparisonTable: "comparison table",
   annotatedCode: "annotated code",
   callout: "callout",
+  diagram: "diagram",
 } as const;
 
 const CSS_STARTING_POINT = `:root {
@@ -33,6 +34,18 @@ const CSS_STARTING_POINT = `:root {
   --good: #267a54;
   --radius: 14px;
   font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #10141b;
+  --surface: #171c25;
+  --ink: #e6e9ef;
+  --muted: #a4abba;
+  --line: #2a3140;
+  --accent: #a999ff;
+  --accent-soft: #27243d;
+  --good: #72c99d;
 }
 
 * { box-sizing: border-box; }
@@ -162,31 +175,21 @@ body {
   .card { padding: 18px; }
 }`;
 
-const DIAGRAM_SNIPPET = `<figure class="diagram">
-  <svg viewBox="0 0 640 180" role="img" aria-labelledby="review-flow-title">
-    <title id="review-flow-title">Review flow from draft to decision</title>
-    <defs>
-      <marker id="review-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-        markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
-      </marker>
-    </defs>
-    <g fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M 180 90 H 280" marker-end="url(#review-arrow)" />
-      <path d="M 400 90 H 500" marker-end="url(#review-arrow)" />
-    </g>
-    <g fill="var(--surface)" stroke="var(--accent)" stroke-width="2">
-      <rect x="20" y="50" width="160" height="80" rx="14" />
-      <rect x="280" y="50" width="120" height="80" rx="14" />
-      <rect x="500" y="50" width="120" height="80" rx="14" />
-    </g>
-    <g fill="currentColor" text-anchor="middle" font-family="system-ui" font-size="16">
-      <text x="100" y="96">Draft</text>
-      <text x="340" y="96">Review</text>
-      <text x="560" y="96">Decision</text>
-    </g>
-  </svg>
-  <figcaption>Keep labels in the SVG so the diagram remains understandable offline.</figcaption>
+const DIAGRAM_SNIPPET = `<figure class="diagram" data-peanut-diagram="flow" data-direction="right">
+  <figcaption>Review flow from draft to decision</figcaption>
+  <div data-peanut-diagram-source>
+    <p><strong>Nodes</strong></p>
+    <ul>
+      <li data-node="draft">Draft</li>
+      <li data-node="review">Review</li>
+      <li data-node="decision">Decision</li>
+    </ul>
+    <p><strong>Relationships</strong></p>
+    <ul>
+      <li data-edge data-from="draft" data-to="review" data-label="Ready">Draft to Review: Ready</li>
+      <li data-edge data-from="review" data-to="decision" data-label="Approved">Review to Decision: Approved</li>
+    </ul>
+  </div>
 </figure>`;
 
 const QUESTION_SNIPPET = `<form class="question-block" data-peanut-question="session-storage">
@@ -252,6 +255,11 @@ export const DESIGN_REFERENCE: DesignReference = {
       name: DESIGN_BLOCK_NAMES.callout,
       selector: ".callout",
       purpose: "Highlight a constraint, risk, open question, or recommended action.",
+    },
+    {
+      name: DESIGN_BLOCK_NAMES.diagram,
+      selector: "[data-peanut-diagram]",
+      purpose: "Declare one directed flow from nodes and relationships without coordinates.",
     },
   ],
 };
