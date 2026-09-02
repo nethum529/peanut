@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
 import { startServer, type PeanutServer } from "./http.ts";
 import { COLOR_PALETTE } from "./rooms.ts";
 
@@ -138,6 +141,101 @@ describe("room document", () => {
     const script = await fetch(`${server.url}/overlay.js`);
     expect(script.headers.get("content-type")).toContain("javascript");
     expect((await script.text()).length).toBeGreaterThan(1000);
+  });
+});
+
+describe("room document assets", () => {
+  test("serves same-directory and nested images without stale caching", async () => {
+    const root = await mkdtemp(pathJoin(tmpdir(), "peanut-assets-"));
+    try {
+      const documentDirectory = pathJoin(root, "document");
+      await mkdir(pathJoin(documentDirectory, "images"), { recursive: true });
+      await Bun.write(pathJoin(documentDirectory, "shot.png"), new Uint8Array([1, 2, 3]));
+      await Bun.write(pathJoin(documentDirectory, "images", "a.JPEG"), new Uint8Array([4, 5, 6]));
+      await Bun.write(pathJoin(documentDirectory, "safe.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+      const { body } = await createRoom({ documentDirectory });
+      const assetUrl = `${server.url}/api/rooms/${body.roomId}`;
+
+      const sibling = await fetch(`${assetUrl}/shot.png`);
+      expect(sibling.status).toBe(200);
+      expect(sibling.headers.get("content-type")).toBe("image/png");
+      expect(sibling.headers.get("cache-control")).toBe("no-store");
+      expect(sibling.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(await sibling.bytes()).toEqual(new Uint8Array([1, 2, 3]));
+
+      const nested = await fetch(`${assetUrl}/images/a.JPEG`);
+      expect(nested.status).toBe(200);
+      expect(nested.headers.get("content-type")).toBe("image/jpeg");
+      expect(await nested.bytes()).toEqual(new Uint8Array([4, 5, 6]));
+
+      const svg = await fetch(`${assetUrl}/safe.svg`);
+      expect(svg.status).toBe(200);
+      expect(svg.headers.get("content-type")).toBe("image/svg+xml");
+      expect(svg.headers.get("content-security-policy")).toBe("sandbox; default-src 'none'");
+
+      await Bun.write(pathJoin(documentDirectory, "shot.png"), new Uint8Array([7, 8, 9]));
+      const reloaded = await fetch(`${assetUrl}/shot.png`);
+      expect(await reloaded.bytes()).toEqual(new Uint8Array([7, 8, 9]));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses traversal, absolute paths, outside symlinks, and other file types", async () => {
+    const root = await mkdtemp(pathJoin(tmpdir(), "peanut-assets-"));
+    try {
+      const documentDirectory = pathJoin(root, "document");
+      await mkdir(documentDirectory);
+      await Bun.write(pathJoin(documentDirectory, "notes.txt"), "not an image");
+      await Bun.write(pathJoin(root, "outside.png"), new Uint8Array([9, 9, 9]));
+      await symlink(pathJoin(root, "outside.png"), pathJoin(documentDirectory, "outside-link.png"));
+      await symlink("notes.txt", pathJoin(documentDirectory, "notes-link.png"));
+      const { body, cookie } = await createRoom({ documentDirectory });
+      const assetUrl = `${server.url}/api/rooms/${body.roomId}`;
+      const refusedPaths = [
+        "..%2Foutside.png",
+        "%2Fetc%2Fpasswd.png",
+        "C:%5Csecret.png",
+        "outside-link.png",
+        "notes-link.png",
+        "notes.txt",
+      ];
+
+      for (const refusedPath of refusedPaths) {
+        const response = await fetch(`${assetUrl}/${refusedPath}`, { headers: { cookie } });
+        expect(response.status).toBe(404);
+        expect(await response.text()).not.toContain("not an image");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps each asset path scoped to its room directory", async () => {
+    const root = await mkdtemp(pathJoin(tmpdir(), "peanut-assets-"));
+    try {
+      const firstDirectory = pathJoin(root, "first");
+      const secondDirectory = pathJoin(root, "second");
+      await mkdir(firstDirectory);
+      await mkdir(secondDirectory);
+      await Bun.write(pathJoin(firstDirectory, "shot.png"), new Uint8Array([1]));
+      await Bun.write(pathJoin(secondDirectory, "shot.png"), new Uint8Array([2]));
+      const first = await createRoom({ documentDirectory: firstDirectory });
+      const second = await createRoom({ documentDirectory: secondDirectory });
+
+      const firstAsset = await fetch(
+        `${server.url}/api/rooms/${first.body.roomId}/shot.png`,
+      );
+      expect(await firstAsset.bytes()).toEqual(new Uint8Array([1]));
+      const secondAsset = await fetch(
+        `${server.url}/api/rooms/${second.body.roomId}/shot.png`,
+      );
+      expect(await secondAsset.bytes()).toEqual(new Uint8Array([2]));
+      const missingRoom = await fetch(`${server.url}/api/rooms/missing/shot.png`);
+      expect(missingRoom.status).toBe(404);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
