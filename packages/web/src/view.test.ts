@@ -1235,6 +1235,86 @@ describe("chat sidebar", () => {
     expect(html).toContain("--paper: #f3f5f8;");
   });
 
+  test("a submitted question answer creates exactly one anchored instruction", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    postFromOverlay({
+      type: "pin",
+      words: "Question: Where should sessions be stored?\nAnswer: Temporary files",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+      questionKey: "session-storage",
+    });
+    await Bun.sleep(150);
+
+    const response = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    });
+    const state = await response.json();
+    expect(state.instructions).toHaveLength(1);
+    expect(state.instructions[0]).toMatchObject({
+      words: "Question: Where should sessions be stored?\nAnswer: Temporary files",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+      author: { name: "Nethum" },
+    });
+    expect(overlayMessages).toContainEqual({
+      type: "answer-result",
+      questionKey: "session-storage",
+      ok: true,
+      answer: "Temporary files",
+    });
+  });
+
+  test("a second answer replaces the queued answer for that question", async () => {
+    const room = await openRoom("# Plan\n\nfirst paragraph");
+    const anchor = { type: "stamp", selector: "p", guard: "first paragraph" };
+    postFromOverlay({
+      type: "pin",
+      words: "Question: Where should sessions be stored?\nAnswer: Temporary files",
+      anchor,
+      questionKey: "session-storage",
+    });
+    await Bun.sleep(150);
+    const first = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+
+    postFromOverlay({
+      type: "pin",
+      words: "Question: Where should sessions be stored?\nAnswer: A local database",
+      anchor,
+      questionKey: "session-storage",
+    });
+    await Bun.sleep(150);
+    const second = await realFetch(`${server.url}/api/rooms/${room.roomId}/state`, {
+      headers: { cookie },
+    }).then((response) => response.json());
+
+    expect(first.instructions).toHaveLength(1);
+    expect(second.instructions).toHaveLength(1);
+    expect(second.instructions[0].id).toBe(first.instructions[0].id);
+    expect(second.instructions[0].words).toEndWith("Answer: A local database");
+    expect(doc.querySelectorAll(".bubble.queued")).toHaveLength(1);
+    expect(doc.querySelector(".bubble.queued")?.textContent).toContain("A local database");
+  });
+
+  test("an invalid question answer message is ignored", async () => {
+    await openRoom("# Plan\n\nfirst paragraph");
+    postFromOverlay({
+      type: "pin",
+      words: "Question: Storage?\nAnswer: Files",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+      questionKey: "not a valid key",
+    });
+    postFromOverlay({
+      type: "pin",
+      words: "Missing the readable answer shape",
+      anchor: { type: "stamp", selector: "p", guard: "first paragraph" },
+      questionKey: "session-storage",
+    });
+    await Bun.sleep(100);
+
+    expect(doc.querySelector(".bubble.queued")).toBeNull();
+  });
+
   test("uses one persistent sandboxed frame and rejects untrusted overlay messages", async () => {
     await openRoom("# Plan\n\nfirst paragraph");
     const original = frame();

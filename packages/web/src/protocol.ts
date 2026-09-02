@@ -35,11 +35,18 @@ export type ChromeToOverlayMessage =
   | { type: "cursors"; cursors: OverlayCursor[] }
   | { type: "theme"; theme: "dark" | "light" }
   | { type: "new-version" }
+  | { type: "answer-result"; questionKey: string; ok: true; answer: string }
+  | { type: "answer-result"; questionKey: string; ok: false; error: string }
   | { type: "snapshot-request"; requestId: string };
 
 export type OverlayToChromeMessage =
   | { type: "ready" }
-  | { type: "pin"; words: string; anchor: StampAnchor | RangeAnchor }
+  | {
+      type: "pin";
+      words: string;
+      anchor: StampAnchor | RangeAnchor;
+      questionKey?: string;
+    }
   | { type: "unpin"; instructionId: string }
   | { type: "anchor-state"; missingInstructionIds: string[] }
   | { type: "hover"; selector: string | null }
@@ -57,6 +64,17 @@ function record(value: unknown): value is UnknownRecord {
 
 function finiteUnit(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+export function isQuestionKey(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(value);
+}
+
+export function answerFromQuestionWords(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^Question: ([^\n]{1,800})\nAnswer: ([^\n]{1,1000})$/.exec(value);
+  if (!match || match[1]!.trim() !== match[1] || match[2]!.trim() !== match[2]) return null;
+  return match[2]!;
 }
 
 function anchor(value: unknown): value is StampAnchor | RangeAnchor | { type: "chat" } {
@@ -132,6 +150,17 @@ export function isChromeToOverlayMessage(value: unknown): value is ChromeToOverl
   }
   if (value.type === "theme") return value.theme === "dark" || value.theme === "light";
   if (value.type === "new-version") return true;
+  if (value.type === "answer-result") {
+    if (!isQuestionKey(value.questionKey) || typeof value.ok !== "boolean") return false;
+    if (value.ok) {
+      return (
+        typeof value.answer === "string" &&
+        value.answer.trim().length > 0 &&
+        value.answer.length <= 1000
+      );
+    }
+    return typeof value.error === "string" && value.error.length > 0 && value.error.length <= 200;
+  }
   return value.type === "snapshot-request" && typeof value.requestId === "string";
 }
 
@@ -146,7 +175,11 @@ export function isOverlayToChromeMessage(value: unknown): value is OverlayToChro
       value.words.trim().length > 0 &&
       value.words.length <= 2000 &&
       anchor(value.anchor) &&
-      value.anchor.type !== "chat"
+      value.anchor.type !== "chat" &&
+      (value.questionKey === undefined ||
+        (isQuestionKey(value.questionKey) &&
+          value.anchor.type === "stamp" &&
+          answerFromQuestionWords(value.words) !== null))
     );
   }
   if (value.type === "unpin") return typeof value.instructionId === "string";

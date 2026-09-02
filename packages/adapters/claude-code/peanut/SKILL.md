@@ -41,6 +41,9 @@ make the content easy to scan. Prefer these structures to long
 paragraphs. Choose the type, spacing, and colour on purpose so that the
 document has a clear hierarchy and supports its content.
 
+Render each open decision as a question block that reviewers can answer.
+Keep settled decisions as static decision rows with their outcomes.
+
 When the document describes an existing user interface, take
 screenshots of the real interface and embed them in the artifact. Keep
 prose for what a screenshot cannot show, such as reasoning, trade-offs,

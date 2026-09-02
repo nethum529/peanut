@@ -7,6 +7,7 @@ export interface DesignBuildingBlock {
 export interface DesignReference {
   css: string;
   diagram: string;
+  question: string;
   buildingBlocks: DesignBuildingBlock[];
 }
 
@@ -14,6 +15,7 @@ export const DESIGN_BLOCK_NAMES = {
   section: "section",
   card: "card",
   decisionRow: "decision row",
+  questionBlock: "question block",
   comparisonTable: "comparison table",
   annotatedCode: "annotated code",
   callout: "callout",
@@ -79,6 +81,26 @@ body {
 .decision-row .decision { font-weight: 700; }
 .decision-row .reason { color: var(--muted); }
 .decision-row .status { color: var(--good); font-weight: 700; }
+
+.question-block {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.question-block fieldset { margin: 0; padding: 0; border: 0; }
+.question-block legend { margin-block-end: 16px; font-size: 1.15rem; font-weight: 700; }
+.question-option { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; }
+.question-option:has(input:checked) { background: var(--accent-soft); }
+.question-option input { margin-block-start: 6px; accent-color: var(--accent); }
+.suggested { color: var(--accent); font-size: 0.85rem; }
+.own-answer { width: 100%; margin-block: 8px 16px; padding: 10px 12px; }
+.question-actions { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.question-actions button { padding: 10px 16px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; }
+.question-selection, .question-status { margin: 0; color: var(--muted); }
+.question-status[data-state="sent"] { color: var(--good); font-weight: 700; }
+.question-status[data-state="error"] { color: #a33b32; }
 
 .comparison-table {
   overflow-x: auto;
@@ -167,9 +189,34 @@ const DIAGRAM_SNIPPET = `<figure class="diagram">
   <figcaption>Keep labels in the SVG so the diagram remains understandable offline.</figcaption>
 </figure>`;
 
+const QUESTION_SNIPPET = `<form class="question-block" data-peanut-question="session-storage">
+  <fieldset>
+    <legend>Where should review sessions be stored?</legend>
+    <label class="question-option">
+      <input type="radio" name="session-storage" value="Temporary files" checked />
+      <span>Temporary files <strong class="suggested">Suggested</strong></span>
+    </label>
+    <label class="question-option">
+      <input type="radio" name="session-storage" value="Memory only" />
+      <span>Memory only</span>
+    </label>
+    <label class="question-option">
+      <input type="radio" name="session-storage" value="own" data-peanut-write-own />
+      <span>Write my own</span>
+    </label>
+    <input class="own-answer" data-peanut-own-answer aria-label="My answer" />
+    <div class="question-actions">
+      <p class="question-selection" data-peanut-selection-status>Selected: Temporary files</p>
+      <button type="submit">Send answer</button>
+    </div>
+    <p class="question-status" data-peanut-answer-status data-state="idle" aria-live="polite">Not sent.</p>
+  </fieldset>
+</form>`;
+
 export const DESIGN_REFERENCE: DesignReference = {
   css: CSS_STARTING_POINT,
   diagram: DIAGRAM_SNIPPET,
+  question: QUESTION_SNIPPET,
   buildingBlocks: [
     {
       name: DESIGN_BLOCK_NAMES.section,
@@ -185,6 +232,11 @@ export const DESIGN_REFERENCE: DesignReference = {
       name: DESIGN_BLOCK_NAMES.decisionRow,
       selector: ".decision-row",
       purpose: "Connect a choice with its reason and current status.",
+    },
+    {
+      name: DESIGN_BLOCK_NAMES.questionBlock,
+      selector: ".question-block",
+      purpose: "Let a reviewer answer one open question without leaving the document.",
     },
     {
       name: DESIGN_BLOCK_NAMES.comparisonTable,
@@ -215,6 +267,11 @@ export function formatDesignReference(reference: DesignReference = DESIGN_REFERE
     "CSS starting point",
     "```css",
     reference.css,
+    "```",
+    "",
+    "Open question block",
+    "```html",
+    reference.question,
     "```",
     "",
     "Diagram embed",

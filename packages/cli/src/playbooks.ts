@@ -164,7 +164,9 @@ Length ceiling: 300 visible words. Cut history that did not affect the choice fi
 ## Blocks to use
 - Open with a ${BLOCK.section} that states the decision and current status.
 - Use a ${BLOCK.comparisonTable} for the options and decisive criteria.
-- Put the chosen option, reason, and owner in a ${BLOCK.decisionRow}.
+- For an open choice, use one ${BLOCK.questionBlock} with a stable, unique \`data-peanut-question\` key. Mark and preselect one suggested option, add a final "Write my own" radio option with its text field, and give the question one submit button.
+- Never send on a radio change. Send only on submit. Show what is selected separately from whether an answer was sent.
+- For a settled choice, keep the outcome, reason, and owner in a static ${BLOCK.decisionRow}.
 - Add a ${BLOCK.callout} for consequences that are costly to reverse.
 
 ## Avoid

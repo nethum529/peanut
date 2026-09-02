@@ -1,4 +1,5 @@
 import {
+  answerFromQuestionWords,
   isOverlayToChromeMessage,
   type ChromeToOverlayMessage,
   type OverlayInstruction,
@@ -166,6 +167,8 @@ let toastRegion: HTMLElement | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let toastRemoveTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSnapshots = new Map<string, (html: string) => void>();
+const questionInstructionIds = new Map<string, string>();
+const questionAnswerWrites = new Map<string, Promise<void>>();
 let connectionLost = false;
 
 function roomIdFromPath(): string {
@@ -551,6 +554,16 @@ async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<voi
     return;
   }
   if (message.type === "pin") {
+    if (message.questionKey) {
+      const previous = questionAnswerWrites.get(message.questionKey) ?? Promise.resolve();
+      const write = previous.then(() => saveQuestionAnswer(message, message.questionKey!));
+      questionAnswerWrites.set(message.questionKey, write);
+      await write;
+      if (questionAnswerWrites.get(message.questionKey) === write) {
+        questionAnswerWrites.delete(message.questionKey);
+      }
+      return;
+    }
     const response = await postJson(`/api/rooms/${currentState.id}/instructions`, {
       words: message.words,
       anchor: message.anchor,
@@ -581,6 +594,59 @@ async function actOnOverlayMessage(message: OverlayToChromeMessage): Promise<voi
       pending(message.html);
     }
   }
+}
+
+async function saveQuestionAnswer(
+  message: Extract<OverlayToChromeMessage, { type: "pin" }>,
+  questionKey: string,
+): Promise<void> {
+  const state = currentState;
+  if (!state) return;
+  const { words, anchor } = message;
+  let instructionId = questionInstructionIds.get(questionKey);
+  if (instructionId && !state.instructions.some((instruction) => instruction.id === instructionId)) {
+    questionInstructionIds.delete(questionKey);
+    instructionId = undefined;
+  }
+
+  let response: Response | null;
+  if (instructionId) {
+    response = await actionRequest(`/api/rooms/${state.id}/instructions/${instructionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ words }),
+    });
+  } else {
+    response = await postJson(`/api/rooms/${state.id}/instructions`, { words, anchor });
+  }
+
+  if (!response) {
+    postToOverlay({
+      type: "answer-result",
+      questionKey,
+      ok: false,
+      error: "Could not send the answer.",
+    });
+    return;
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const detail = typeof body.message === "string" ? body.message : "Could not send the answer.";
+    postToOverlay({
+      type: "answer-result",
+      questionKey,
+      ok: false,
+      error: detail.slice(0, 200),
+    });
+    return;
+  }
+  if (!instructionId) {
+    const body = await response.json().catch(() => ({}));
+    if (typeof body.id === "string") questionInstructionIds.set(questionKey, body.id);
+  }
+  await refresh(state.id);
+  const answer = answerFromQuestionWords(words);
+  if (!answer) return;
+  postToOverlay({ type: "answer-result", questionKey, ok: true, answer });
 }
 
 export function handleOverlayMessage(event: MessageEvent): boolean {
@@ -1199,6 +1265,8 @@ export function resetView(): void {
   planFrame = null;
   for (const pending of pendingSnapshots.values()) pending("");
   pendingSnapshots.clear();
+  questionInstructionIds.clear();
+  questionAnswerWrites.clear();
   if (protocolWindow) protocolWindow.removeEventListener("message", handleOverlayMessage);
   protocolWindow = null;
   toastRegion?.remove();
