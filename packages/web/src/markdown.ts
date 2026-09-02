@@ -14,13 +14,25 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (ch) => ESCAPES[ch]!);
 }
 
-function safeHref(url: string): string | null {
+function safeHref(url: string, kind: "link" | "image" = "link"): string | null {
   if (/^https?:\/\//i.test(url)) return url;
+  if (kind === "image" && /^data:image\/png;base64,[a-z\d+/]*={0,2}$/i.test(url)) return url;
+  if (kind === "image" && !/^[a-z][a-z\d+.-]*:/i.test(url)) return url;
   return null;
 }
 
+function renderImage(alt: string, source: string): string {
+  const src = safeHref(source, "image");
+  if (!src) return escapeHtml(alt);
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`;
+}
+
+function blockImage(line: string): RegExpMatchArray | null {
+  return line.match(/^\s*!\[([^\]]*)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)\s*$/);
+}
+
 // Inline pass: code spans first so their content stays literal, then
-// links, then bold and italic.
+// images and links, then bold and italic.
 function renderInline(text: string): string {
   const parts: string[] = [];
   let rest = text;
@@ -41,19 +53,25 @@ function renderSpans(text: string): string {
   let out = "";
   let rest = text;
   while (rest.length > 0) {
-    const link = rest.match(/\[([^\]]+)\]\(([^)\s]+)\)/);
-    if (!link || link.index === undefined) {
+    const span = rest.match(
+      /!\[([^\]]*)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)|\[([^\]]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)\)/,
+    );
+    if (!span || span.index === undefined) {
       out += renderEmphasis(rest);
       break;
     }
-    out += renderEmphasis(rest.slice(0, link.index));
-    const href = safeHref(link[2]!);
-    if (href) {
-      out += `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${renderEmphasis(link[1]!)}</a>`;
+    out += renderEmphasis(rest.slice(0, span.index));
+    if (span[1] !== undefined) {
+      out += renderImage(span[1], span[2]!);
     } else {
-      out += renderEmphasis(link[1]!);
+      const href = safeHref(span[4]!);
+      if (href) {
+        out += `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${renderEmphasis(span[3]!)}</a>`;
+      } else {
+        out += renderEmphasis(span[3]!);
+      }
     }
-    rest = rest.slice(link.index + link[0].length);
+    rest = rest.slice(span.index + span[0].length);
   }
   return out;
 }
@@ -118,6 +136,14 @@ export function renderMarkdown(source: string): string {
     const line = lines[index]!;
 
     if (line.trim() === "") {
+      index += 1;
+      continue;
+    }
+
+    const image = blockImage(line);
+    if (image) {
+      const rendered = renderImage(image[1]!, image[2]!);
+      out.push(rendered.startsWith("<img ") ? rendered : `<p>${rendered}</p>`);
       index += 1;
       continue;
     }
@@ -208,6 +234,7 @@ export function renderMarkdown(source: string): string {
       index < lines.length &&
       lines[index]!.trim() !== "" &&
       !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+[.)]\s|>|\|)/.test(lines[index]!) &&
+      !blockImage(lines[index]!) &&
       !tableStart(lines, index)
     ) {
       paragraph.push(lines[index]!);

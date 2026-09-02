@@ -37,6 +37,37 @@ describe("renderMarkdown", () => {
     expect(unsafe).toContain("bad");
   });
 
+  test("renders an image on its own line as a block", () => {
+    expect(renderMarkdown("before\n![Login screen](shot.png)\nafter")).toBe(
+      '<p>before</p>\n<img src="shot.png" alt="Login screen">\n<p>after</p>',
+    );
+  });
+
+  test("renders images inline in paragraphs and list items", () => {
+    expect(renderMarkdown("Open ![Login screen](https://example.com/shot.png) now")).toBe(
+      '<p>Open <img src="https://example.com/shot.png" alt="Login screen"> now</p>',
+    );
+    expect(renderMarkdown("- Open ![Login screen](shot.png) now")).toBe(
+      '<ul><li>Open <img src="shot.png" alt="Login screen"> now</li></ul>',
+    );
+  });
+
+  test("renders unsafe image sources as plain alt text", () => {
+    expect(renderMarkdown("![bad](javascript:alert(1))")).toBe("<p>bad</p>");
+    expect(renderMarkdown("![also bad](data:text/html,<script>alert(1)</script>)")).toBe(
+      "<p>also bad</p>",
+    );
+  });
+
+  test("renders a PNG data URI image", () => {
+    const source = "data:image/png;base64,iVBORw0KGgo=";
+    expect(renderMarkdown(`![pixel](${source})`)).toBe(`<img src="${source}" alt="pixel">`);
+  });
+
+  test("renders an empty alt attribute for a decorative image", () => {
+    expect(renderMarkdown("![](shot.png)")).toBe('<img src="shot.png" alt="">');
+  });
+
   test("raw HTML never survives as markup", () => {
     const out = renderMarkdown('<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>');
     expect(out).not.toContain("<script");
