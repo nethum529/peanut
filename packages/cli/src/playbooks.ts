@@ -17,6 +17,8 @@ interface Playbook {
   guidance: string;
 }
 
+const DIAGRAM_DEFAULT = `Lead with a diagram when explaining how something works, how data or control moves, or the order of a plan. Use one for a flow, a step sequence, components that communicate, or a before and after. Use prose only for reasoning, trade-offs, and open questions the diagram cannot show. Skip it for a flat list of facts, a single decision, or a short note. Keep one idea and about 7 nodes at most. Split a larger diagram in two.`;
+
 const PLAYBOOKS: Record<PlaybookId, Playbook> = {
   plan: {
     description: "Lay out ordered work, checks, and completion criteria.",
@@ -24,11 +26,13 @@ const PLAYBOOKS: Record<PlaybookId, Playbook> = {
 
 Use this shape to explain how work will move from the current state to a clear result.
 
+${DIAGRAM_DEFAULT}
+
 Length ceiling: 450 visible words. Cut background that does not change a step or dependency first.
 
 ## Blocks to use
-- Open with a ${BLOCK.section} that states the goal and scope.
-- Put each phase in a ${BLOCK.card} with its action, owner, and completion check.
+- Lead with one focused diagram of the plan's order.
+- Use a ${BLOCK.section} for the goal and scope, then a ${BLOCK.card} for each phase.
 - Use a ${BLOCK.decisionRow} for choices that must be settled before work continues.
 - Add a ${BLOCK.callout} for the largest risk or dependency.
 
@@ -39,9 +43,9 @@ Length ceiling: 450 visible words. Cut background that does not change a step or
 
 ## Small example
 ### Add retry limits
-1. Set a maximum of three attempts. Check: the fourth attempt never starts.
-2. Record the final failure. Check: the log includes the request ID.
-3. Run the timeout tests. Done when every retry test passes.`,
+[Limit attempts] -> [Log final failure] -> [Run timeout tests]
+
+Checks: the fourth attempt never starts, the log includes the request ID, and every retry test passes.`,
   },
   comparison: {
     description: "Compare options against the same useful criteria.",
@@ -101,18 +105,16 @@ Callout: limits apply per user.`,
     description: "Show a flow, relationship, or boundary visually.",
     guidance: `# Diagram playbook
 
-Use this shape when position, direction, or connection explains the subject better than prose.
+${DIAGRAM_DEFAULT}
 
 Length ceiling: 180 visible words. Cut prose that repeats the diagram first.
 
 ## Blocks to use
-- Use a ${BLOCK.section} to name the question the diagram answers.
-- Place one focused diagram in a ${BLOCK.card}.
+- Lead with one diagram in a ${BLOCK.section} that names its question.
 - Add a ${BLOCK.callout} for a boundary, exception, or asynchronous step.
 - Follow with a ${BLOCK.decisionRow} if the diagram supports a design choice.
 
 ## Avoid
-- Do not show details that do not affect the main path.
 - Do not use color as the only way to convey meaning.
 - Do not leave arrows or abbreviations without labels.
 
