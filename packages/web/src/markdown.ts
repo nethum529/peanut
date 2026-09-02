@@ -14,6 +14,219 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (ch) => ESCAPES[ch]!);
 }
 
+type SyntaxToken = "keyword" | "string" | "number" | "comment" | "punctuation";
+
+interface SyntaxLanguage {
+  keywords: ReadonlySet<string>;
+  lineComments: readonly string[];
+  blockComments: ReadonlyArray<readonly [string, string]>;
+  quotes: readonly string[];
+  hyphenatedNames?: boolean;
+  caseInsensitiveKeywords?: boolean;
+  lineCommentAtWordStart?: boolean;
+}
+
+function keywords(source: string): ReadonlySet<string> {
+  return new Set(source.split(" "));
+}
+
+const JAVASCRIPT: SyntaxLanguage = {
+  keywords: keywords(
+    "as async await break case catch class const continue debugger default delete do else enum export extends false finally for from function if implements import in instanceof interface let new null of private protected public readonly return static super switch this throw true try type typeof undefined var void while with yield",
+  ),
+  lineComments: ["//"],
+  blockComments: [["/*", "*/"]],
+  quotes: ["\"", "'", "`"],
+};
+
+const JSON_LANGUAGE: SyntaxLanguage = {
+  keywords: keywords("false null true"),
+  lineComments: [],
+  blockComments: [],
+  quotes: ["\""],
+};
+
+const SHELL: SyntaxLanguage = {
+  keywords: keywords(
+    "case do done elif else esac fi for function if in select then time until while",
+  ),
+  lineComments: ["#"],
+  blockComments: [],
+  quotes: ["\"", "'", "`"],
+  lineCommentAtWordStart: true,
+};
+
+const HTML: SyntaxLanguage = {
+  keywords: keywords(
+    "a article aside body button code div footer form h1 h2 h3 head header html img input label li link main meta nav ol p pre script section span style table tbody td th thead title tr ul",
+  ),
+  lineComments: [],
+  blockComments: [["<!--", "-->"]],
+  quotes: ["\"", "'"],
+  hyphenatedNames: true,
+  caseInsensitiveKeywords: true,
+};
+
+const CSS: SyntaxLanguage = {
+  keywords: keywords(
+    "align-items animation background border color display flex font gap grid height margin padding position transform transition width",
+  ),
+  lineComments: [],
+  blockComments: [["/*", "*/"]],
+  quotes: ["\"", "'"],
+  hyphenatedNames: true,
+  caseInsensitiveKeywords: true,
+};
+
+const PYTHON: SyntaxLanguage = {
+  keywords: keywords(
+    "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield",
+  ),
+  lineComments: ["#"],
+  blockComments: [],
+  quotes: ["\"\"\"", "'''", "\"", "'"],
+};
+
+const MARKDOWN: SyntaxLanguage = {
+  keywords: keywords(""),
+  lineComments: [],
+  blockComments: [["<!--", "-->"]],
+  quotes: ["`"],
+};
+
+// The supported list is deliberately short so the offline scanner stays small.
+const SYNTAX_LANGUAGES: Record<string, SyntaxLanguage> = {
+  bash: SHELL,
+  css: CSS,
+  htm: HTML,
+  html: HTML,
+  javascript: JAVASCRIPT,
+  js: JAVASCRIPT,
+  json: JSON_LANGUAGE,
+  markdown: MARKDOWN,
+  md: MARKDOWN,
+  py: PYTHON,
+  python: PYTHON,
+  sh: SHELL,
+  shell: SHELL,
+  ts: JAVASCRIPT,
+  typescript: JAVASCRIPT,
+  zsh: SHELL,
+};
+
+const PUNCTUATION = new Set("{}[]();,.<>:+-*/%=!?&|^~@#\\".split(""));
+
+function syntaxSpan(token: SyntaxToken, value: string): string {
+  return `<span class="syntax-${token}">${escapeHtml(value)}</span>`;
+}
+
+function delimiterAt(source: string, index: number, delimiters: readonly string[]): string | null {
+  for (const delimiter of delimiters) {
+    if (source.startsWith(delimiter, index)) return delimiter;
+  }
+  return null;
+}
+
+function quotedEnd(source: string, index: number, quote: string): number {
+  let cursor = index + quote.length;
+  while (cursor < source.length) {
+    if (source[cursor] === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (source.startsWith(quote, cursor)) return cursor + quote.length;
+    cursor += 1;
+  }
+  return source.length;
+}
+
+function numberEnd(source: string, index: number): number {
+  const match = source.slice(index).match(
+    /^(?:0[xob][\da-f]+|(?:\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(?:e[+-]?[\d_]+)?)/i,
+  );
+  return index + (match?.[0].length ?? 0);
+}
+
+function identifierEnd(source: string, index: number, hyphenatedNames: boolean): number {
+  let cursor = index + 1;
+  while (cursor < source.length && /[a-z\d_$]/i.test(source[cursor]!)) cursor += 1;
+  if (hyphenatedNames) {
+    while (cursor < source.length && /[a-z\d_$-]/i.test(source[cursor]!)) cursor += 1;
+  }
+  return cursor;
+}
+
+function highlightCode(source: string, language: SyntaxLanguage): string {
+  const out: string[] = [];
+  let index = 0;
+
+  while (index < source.length) {
+    const blockComment = language.blockComments.find(([start]) => source.startsWith(start, index));
+    if (blockComment) {
+      const end = source.indexOf(blockComment[1], index + blockComment[0].length);
+      const next = end < 0 ? source.length : end + blockComment[1].length;
+      out.push(syntaxSpan("comment", source.slice(index, next)));
+      index = next;
+      continue;
+    }
+
+    let lineComment = delimiterAt(source, index, language.lineComments);
+    if (
+      lineComment &&
+      language.lineCommentAtWordStart &&
+      index > 0 &&
+      !/[\s;|&()]/.test(source[index - 1]!)
+    ) {
+      lineComment = null;
+    }
+    if (lineComment) {
+      const end = source.indexOf("\n", index + lineComment.length);
+      const next = end < 0 ? source.length : end;
+      out.push(syntaxSpan("comment", source.slice(index, next)));
+      index = next;
+      continue;
+    }
+
+    const quote = delimiterAt(source, index, language.quotes);
+    if (quote) {
+      const next = quotedEnd(source, index, quote);
+      out.push(syntaxSpan("string", source.slice(index, next)));
+      index = next;
+      continue;
+    }
+
+    const character = source[index]!;
+    if (/\d/.test(character) || (character === "." && /\d/.test(source[index + 1] ?? ""))) {
+      const next = numberEnd(source, index);
+      out.push(syntaxSpan("number", source.slice(index, next)));
+      index = next;
+      continue;
+    }
+
+    if (/[a-z_$]/i.test(character)) {
+      const next = identifierEnd(source, index, language.hyphenatedNames ?? false);
+      const identifier = source.slice(index, next);
+      const keyword = language.caseInsensitiveKeywords ? identifier.toLowerCase() : identifier;
+      out.push(
+        language.keywords.has(keyword)
+          ? syntaxSpan("keyword", identifier)
+          : escapeHtml(identifier),
+      );
+      index = next;
+      continue;
+    }
+
+    if (PUNCTUATION.has(character)) {
+      out.push(syntaxSpan("punctuation", character));
+    } else {
+      out.push(escapeHtml(character));
+    }
+    index += 1;
+  }
+
+  return out.join("");
+}
+
 function safeHref(url: string, kind: "link" | "image" = "link"): string | null {
   if (/^https?:\/\//i.test(url)) return url;
   if (kind === "image" && /^data:image\/png;base64,[a-z\d+/]*={0,2}$/i.test(url)) return url;
@@ -239,7 +452,7 @@ export function renderMarkdown(source: string): string {
       continue;
     }
 
-    const fence = line.match(/^```/);
+    const fence = line.match(/^```[ \t]*([^\s`]*)/);
     if (fence) {
       const code: string[] = [];
       index += 1;
@@ -248,7 +461,9 @@ export function renderMarkdown(source: string): string {
         index += 1;
       }
       index += 1;
-      out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      const source = code.join("\n");
+      const language = SYNTAX_LANGUAGES[fence[1]!.toLowerCase()];
+      out.push(`<pre><code>${language ? highlightCode(source, language) : escapeHtml(source)}</code></pre>`);
       continue;
     }
 
