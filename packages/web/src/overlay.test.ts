@@ -179,6 +179,16 @@ describe("document overlay", () => {
     });
   });
 
+  test("treats a rendered diagram as one stamp target", () => {
+    const figure = document.createElement("figure");
+    figure.dataset.peanutDiagram = "flow";
+    figure.dataset.peanutDiagramRendered = "true";
+    figure.innerHTML = '<svg><g><rect class="node"></rect></g></svg>';
+    document.querySelector("main")!.append(figure);
+
+    expect(stampTarget(document.body, figure.querySelector("rect"))).toBe(figure);
+  });
+
   test("clamps the composer to the viewport and preserves it across state updates", () => {
     Object.defineProperty(win, "innerWidth", { configurable: true, value: 300 });
     Object.defineProperty(win, "innerHeight", { configurable: true, value: 300 });
