@@ -49,8 +49,10 @@ interface RelayData {
   participantId: string;
 }
 
-export function startServer(options: { port?: number } = {}): PeanutServer {
-  const store = new RoomStore();
+export function startServer(
+  options: { port?: number; onViewerAccepted?: () => void } = {},
+): PeanutServer {
+  const store = new RoomStore(options.onViewerAccepted);
   // One set of live sockets per room. Incoming frames are passed through
   // unchanged. The relay also announces when a participant disconnects.
   const relayRooms = new Map<string, Set<Bun.ServerWebSocket<RelayData>>>();

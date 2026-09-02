@@ -61,9 +61,12 @@ async function shareAndEnd(
 }
 
 interface SessionFile {
+  server?: string;
   roomId: string;
   agentToken: string;
   filePath?: string;
+  serverPid?: number;
+  serverLog?: string;
 }
 
 async function waitForSession(path: string): Promise<SessionFile> {
@@ -545,6 +548,8 @@ describe("peanut cli", () => {
       server: string;
     };
     expect(session.server).toStartWith("http://127.0.0.1:");
+    expect(session.serverPid).toBeNumber();
+    expect(session.serverLog).toBe(join(dir, ".peanut-session.log"));
     const cookie = await (async () => {
       const response = await fetch(`${session.server}/api/rooms/${session.roomId}/join`, {
         method: "POST",
@@ -552,6 +557,15 @@ describe("peanut cli", () => {
       });
       return cookieFrom(response);
     })();
+    const instruction = await fetch(`${session.server}/api/rooms/${session.roomId}/instructions`, {
+      method: "POST",
+      headers: { cookie },
+      body: JSON.stringify({
+        words: "Private instruction text",
+        anchor: { type: "stamp", selector: "p" },
+      }),
+    });
+    expect(instruction.status).toBe(201);
     await fetch(`${session.server}/api/rooms/${session.roomId}/end`, {
       method: "POST",
       headers: { cookie },
@@ -566,6 +580,53 @@ describe("peanut cli", () => {
       alive = false;
     }
     expect(alive).toBe(false);
+
+    const log = await Bun.file(session.serverLog!).text();
+    const lines = log.trim().split("\n");
+    expect(lines.some((line) => line.includes("server started pid="))).toBe(true);
+    expect(lines.some((line) => line.includes("server listening url="))).toBe(true);
+    expect(lines.some((line) => line.includes("viewer accepted"))).toBe(true);
+    expect(lines.some((line) => line.includes("server ended reason=normal stop"))).toBe(true);
+    expect(log).not.toContain("reason=signal");
+    expect(log).not.toContain("uncaught exception");
+    expect(log).not.toContain("unhandled rejection");
+    expect(log).not.toContain("Retry forever on failure");
+    expect(log).not.toContain("Private instruction text");
+    for (const line of lines) {
+      expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /);
+    }
+  }, 20000);
+
+  const unixTest = process.platform === "win32" ? test.skip : test;
+  unixTest("a signal to the parent process group does not stop the server", async () => {
+    const plan = await writePlan();
+    const starter = Bun.spawn(
+      [process.execPath, MAIN, "share", plan, "--session", SESSION],
+      { cwd: dir, detached: true, stdout: "ignore", stderr: "ignore" },
+    );
+    let session: SessionFile | undefined;
+    try {
+      session = await waitForSession(join(dir, SESSION));
+      expect(session.server).toBeDefined();
+      expect(session.serverPid).toBeNumber();
+
+      process.kill(-starter.pid, "SIGINT");
+      await starter.exited;
+      await Bun.sleep(200);
+
+      const response = await fetch(`${session.server}/api/rooms/none/state`, {
+        signal: AbortSignal.timeout(1500),
+      });
+      expect([403, 404]).toContain(response.status);
+    } finally {
+      if (session?.serverPid) {
+        try {
+          process.kill(session.serverPid, "SIGTERM");
+        } catch {
+          // The server was already gone.
+        }
+      }
+    }
   }, 20000);
 
   test("wait survives dropped poll connections and resumes the review", async () => {
@@ -651,12 +712,20 @@ describe("peanut cli", () => {
   }, 20000);
 
   test("a dead server is a usage error, not a verdict", async () => {
+    const logPath = join(dir, ".peanut-session.log");
     await Bun.write(
       join(dir, SESSION),
-      JSON.stringify({ server: "http://127.0.0.1:9", roomId: "x", agentToken: "y", lastRound: 1 }),
+      JSON.stringify({
+        server: "http://127.0.0.1:9",
+        roomId: "x",
+        agentToken: "y",
+        lastRound: 1,
+        serverLog: logPath,
+      }),
     );
     const proc = run(["reply", "done"]);
     expect(await proc.exited).toBe(2);
+    expect(await new Response(proc.stderr).text()).toContain(logPath);
   }, 15000);
 
   test("a missing file or unknown command fails with exit 2", async () => {

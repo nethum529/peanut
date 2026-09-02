@@ -133,6 +133,8 @@ function canModerate(participant: Participant, instruction: Instruction): boolea
 export class RoomStore {
   private rooms = new Map<string, Room>();
 
+  constructor(private readonly onViewerAccepted?: () => void) {}
+
   // Without a hostName the room starts empty and the first joiner
   // becomes the host. The CLI uses this shape: the agent creates the
   // room, and the person who opens the link runs it.
@@ -181,9 +183,11 @@ export class RoomStore {
     const room = this.getRoom(roomId);
     if (input.sessionId) {
       const existing = room.participants.get(input.sessionId);
-      if (existing) return existing;
+      if (existing) return this.acceptViewer(existing);
     }
-    return this.addParticipant(room, normalizeName(input.name), room.participants.size === 0);
+    return this.acceptViewer(
+      this.addParticipant(room, normalizeName(input.name), room.participants.size === 0),
+    );
   }
 
   // The web client uses this guarded path after an empty room reports no
@@ -193,12 +197,12 @@ export class RoomStore {
     const room = this.getRoom(roomId);
     if (sessionId) {
       const existing = room.participants.get(sessionId);
-      if (existing) return existing;
+      if (existing) return this.acceptViewer(existing);
     }
     if (room.participants.size !== 0) {
       throw new RoomError("host_taken", "the room already has a host");
     }
-    return this.addParticipant(room, "Host", true);
+    return this.acceptViewer(this.addParticipant(room, "Host", true));
   }
 
   participantCount(roomId: string): number {
@@ -604,6 +608,11 @@ export class RoomStore {
       joinedAt: Date.now(),
     };
     room.participants.set(participant.sessionId, participant);
+    return participant;
+  }
+
+  private acceptViewer(participant: Participant): Participant {
+    this.onViewerAccepted?.();
     return participant;
   }
 }

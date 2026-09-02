@@ -1,16 +1,17 @@
-import { watch as watchFileChanges } from "node:fs";
+import { closeSync, openSync, watch as watchFileChanges } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { DESIGN_REFERENCE, formatDesignReference } from "./design.ts";
 import { formatEnded, formatRound, isApproved, type WireEnded, type WireRound } from "./format.ts";
 import { formatPlaybookList, formatUnknownPlaybook, getPlaybook } from "./playbooks.ts";
+import { writeLifecycleLog } from "./server-log.ts";
 import { copyToClipboard, startTunnel } from "./tunnel.ts";
 
 // The peanut CLI. Each invocation blocks until the next round or the
 // final verdict, prints it, and exits. The room lives in a session
 // file, so a later invocation continues the same review.
 //
-//   peanut share <file> [--watch] [--no-hint] [--title t] [--server url] [--session path]
+//   peanut share <file> [--watch] [--no-hint] [--title t] [--server url] [--port n] [--session path]
 //   peanut reply <message> [--meta m] [--session path]
 //   peanut push [--session path]
 //   peanut wait [--session path]
@@ -33,6 +34,7 @@ interface Session {
   // Set only when this CLI started the server, so only then is the
   // server stopped at the end of the review.
   serverPid?: number;
+  serverLog?: string;
   tunnelPid?: number;
 }
 
@@ -79,6 +81,12 @@ function sessionPath(flags: Flags): string {
   return `${process.env.TMPDIR ?? "/tmp"}/peanut-session-${key}.json`;
 }
 
+function serverLogPath(flags: Flags): string {
+  const path = resolve(sessionPath(flags));
+  const extension = extname(path);
+  return join(dirname(path), `${basename(path, extension)}.log`);
+}
+
 async function loadSession(flags: Flags): Promise<Session> {
   const file = Bun.file(sessionPath(flags));
   if (!(await file.exists())) {
@@ -97,11 +105,17 @@ async function api(
   path: string,
   payload?: unknown,
 ): Promise<Response> {
-  return fetch(`${session.server}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${session.agentToken}` },
-    ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
-  });
+  try {
+    return await fetch(`${session.server}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${session.agentToken}` },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const log = session.serverLog ? ` Server log: ${session.serverLog}.` : "";
+    throw new Error(`Could not reach ${session.server}: ${detail}.${log}`);
+  }
 }
 
 type ContentUpdateResult = "updated" | "unchanged" | "skipped";
@@ -226,12 +240,28 @@ const IS_COMPILED = Bun.main.includes("$bunfs");
 
 // Starts a detached peanut server and reads its url from the state
 // file it writes once it listens.
-async function startDetachedServer(): Promise<{ url: string; pid: number }> {
+async function startDetachedServer(
+  logPath: string,
+  port?: string,
+): Promise<{ url: string; pid: number }> {
   const stateFile = `${process.env.TMPDIR ?? "/tmp"}/peanut-server-${process.pid}-${Math.random().toString(36).slice(2)}.json`;
+  const serveArgs = ["serve", "--state", stateFile, "--log", logPath];
+  if (port) serveArgs.push("--port", port);
   const command = IS_COMPILED
-    ? [process.execPath, "serve", "--state", stateFile]
-    : [process.execPath, new URL("./main.ts", import.meta.url).pathname, "serve", "--state", stateFile];
-  const child = Bun.spawn(command, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+    ? [process.execPath, ...serveArgs]
+    : [process.execPath, new URL("./main.ts", import.meta.url).pathname, ...serveArgs];
+  const logFd = openSync(logPath, "w", 0o600);
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn(command, {
+      detached: true,
+      stdin: "ignore",
+      stdout: logFd,
+      stderr: logFd,
+    });
+  } finally {
+    closeSync(logFd);
+  }
   child.unref();
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -246,7 +276,7 @@ async function startDetachedServer(): Promise<{ url: string; pid: number }> {
     await Bun.sleep(100);
   }
   child.kill();
-  fail("Could not start the peanut server.");
+  fail(`Could not start the peanut server. Server log: ${logPath}.`);
 }
 
 async function finishReview(
@@ -256,10 +286,16 @@ async function finishReview(
   code: number,
 ): Promise<never> {
   if (ended) {
-    for (const pid of [session.serverPid, session.tunnelPid]) {
-      if (!pid) continue;
+    if (session.serverPid) {
       try {
-        process.kill(pid);
+        process.kill(session.serverPid, process.platform === "win32" ? "SIGTERM" : "SIGUSR2");
+      } catch {
+        // The process was already gone; nothing to stop.
+      }
+    }
+    if (session.tunnelPid) {
+      try {
+        process.kill(session.tunnelPid);
       } catch {
         // The process was already gone; nothing to stop.
       }
@@ -313,7 +349,8 @@ async function waitAndPrint(flags: Flags, session: Session): Promise<never> {
     } catch {
       failures += 1;
       if (failures >= POLL_RETRY_LIMIT) {
-        fail(`Lost the connection to ${session.server}. Run peanut wait to keep waiting.`);
+        const log = session.serverLog ? ` Server log: ${session.serverLog}.` : "";
+        fail(`Lost the connection to ${session.server}. Run peanut wait to keep waiting.${log}`);
       }
       await Bun.sleep(POLL_RETRY_PAUSE_MS);
       continue;
@@ -371,7 +408,9 @@ function countVisibleWords(content: string, contentType: "html" | "markdown"): n
 async function share(flags: Flags): Promise<never> {
   const filePath = flags.positional[0];
   if (!filePath) {
-    fail("Usage: peanut share <file> [--watch] [--no-hint] [--title t] [--server url]");
+    fail(
+      "Usage: peanut share <file> [--watch] [--no-hint] [--title t] [--server url] [--port n]",
+    );
   }
   const file = Bun.file(filePath);
   if (!(await file.exists())) fail(`No such file: ${filePath}`);
@@ -393,25 +432,36 @@ async function share(flags: Flags): Promise<never> {
 
   let server = flags.named.get("server") ?? "";
   let serverPid: number | undefined;
+  let serverLog: string | undefined;
   if (server) {
     if (!(await serverAlive(server))) fail(`No peanut server answers at ${server}.`);
   } else {
-    const started = await startDetachedServer();
+    serverLog = serverLogPath(flags);
+    const started = await startDetachedServer(serverLog, flags.named.get("port"));
     server = started.url;
     serverPid = started.pid;
   }
 
-  const created = await fetch(`${server}/api/rooms`, {
-    method: "POST",
-    body: JSON.stringify({
-      title: flags.named.get("title") ?? filePath,
-      content,
-      contentType,
-      documentDirectory: dirname(resolve(filePath)),
-      hostless: true,
-    }),
-  });
-  if (!created.ok) fail(`Could not create the room (${created.status}).`);
+  let created: Response;
+  try {
+    created = await fetch(`${server}/api/rooms`, {
+      method: "POST",
+      body: JSON.stringify({
+        title: flags.named.get("title") ?? filePath,
+        content,
+        contentType,
+        documentDirectory: dirname(resolve(filePath)),
+        hostless: true,
+      }),
+    });
+  } catch {
+    const log = serverLog ? ` Server log: ${serverLog}.` : "";
+    fail(`Could not reach the peanut server at ${server}.${log}`);
+  }
+  if (!created.ok) {
+    const log = serverLog ? ` Server log: ${serverLog}.` : "";
+    fail(`Could not create the room (${created.status}).${log}`);
+  }
   const body = (await created.json()) as { roomId: string; agentToken: string };
 
   const session: Session = {
@@ -421,6 +471,7 @@ async function share(flags: Flags): Promise<never> {
     lastRound: 0,
     filePath: resolve(filePath),
     ...(serverPid === undefined ? {} : { serverPid }),
+    ...(serverLog === undefined ? {} : { serverLog }),
   };
   await saveSession(flags, session);
 
@@ -492,13 +543,66 @@ async function wait(flags: Flags): Promise<never> {
 async function serve(flags: Flags): Promise<void> {
   const { startServer } = await import("../../server/src/http.ts");
   const port = Number(flags.named.get("port") ?? 0) || 0;
-  const server = startServer({ port });
+  const logPath = flags.named.get("log");
+  if (!logPath) {
+    const server = startServer({ port });
+    console.log(`peanut server on ${server.url}`);
+    await new Promise(() => {});
+    return;
+  }
+
+  let ending = false;
+  let server: ReturnType<typeof startServer> | undefined;
+  const log = (message: string) => {
+    try {
+      writeLifecycleLog(logPath, message);
+    } catch {
+      // A missing log directory must not keep a stopped server alive.
+    }
+  };
+  const end = (reason: string, code: number) => {
+    if (ending) return;
+    ending = true;
+    log(`server ended reason=${reason}`);
+    try {
+      server?.stop();
+    } finally {
+      process.exit(code);
+    }
+  };
+  const stack = (error: unknown) =>
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+
+  if (process.platform === "win32") {
+    process.once("SIGTERM", () => end("normal stop", 0));
+  } else {
+    process.once("SIGUSR2", () => end("normal stop", 0));
+    process.once("SIGTERM", () => end("signal signal=SIGTERM", 143));
+    process.once("SIGHUP", () => end("signal signal=SIGHUP", 129));
+  }
+  process.once("SIGINT", () => end("signal signal=SIGINT", 130));
+  process.once("uncaughtException", (error) => {
+    log(`uncaught exception stack=${stack(error)}`);
+    end("uncaught error", 1);
+  });
+  process.once("unhandledRejection", (error) => {
+    log(`unhandled rejection stack=${stack(error)}`);
+    end("uncaught error", 1);
+  });
+
+  log(`server started pid=${process.pid}`);
+  try {
+    server = startServer({ port, onViewerAccepted: () => log("viewer accepted") });
+  } catch (error) {
+    log(`uncaught exception stack=${stack(error)}`);
+    end("uncaught error", 1);
+    return;
+  }
   const stateFile = flags.named.get("state");
   if (stateFile) {
     await Bun.write(stateFile, JSON.stringify({ url: server.url, pid: process.pid }));
   }
-  console.log(`peanut server on ${server.url}`);
-  // Serve until killed.
+  log(`server listening url=${server.url}`);
   await new Promise(() => {});
 }
 
