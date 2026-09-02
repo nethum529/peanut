@@ -4,6 +4,29 @@ import { restoreStamp, selectorFor, stampGuard } from "./anchors.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { stampTarget } from "./overlay.ts";
 
+const SYNTAX_TOKENS = ["keyword", "string", "number", "comment", "punctuation"] as const;
+
+function cssVariable(rules: string, name: string): string {
+  return rules.match(new RegExp(`--${name}:\\s*(#[\\da-f]+)`, "i"))?.[1] ?? "";
+}
+
+function luminance(hex: string): number {
+  const channels = hex
+    .slice(1)
+    .match(/.{2}/g)!
+    .map((channel) => Number.parseInt(channel, 16) / 255)
+    .map((channel) =>
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+  return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
+}
+
+function contrast(first: string, second: string): number {
+  const lighter = Math.max(luminance(first), luminance(second));
+  const darker = Math.min(luminance(first), luminance(second));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe("renderMarkdown", () => {
   test("renders headings at each level", () => {
     expect(renderMarkdown("# Title")).toBe("<h1>Title</h1>");
@@ -100,6 +123,108 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("```\nconst x = 1 < 2;\n```")).toBe(
       "<pre><code>const x = 1 &lt; 2;</code></pre>",
     );
+  });
+
+  test("highlights each token type in a tagged TypeScript block", () => {
+    const rendered = renderMarkdown(
+      '```ts\nconst message: string = "safe" + 42; // keep literal\n```',
+    );
+    for (const token of SYNTAX_TOKENS) {
+      expect(rendered).toContain(`class="syntax-${token}"`);
+    }
+  });
+
+  test("supports the deliberately short language and alias list", () => {
+    const examples = [
+      ["typescript", "const value = 1", "keyword"],
+      ["js", "return 'ok'", "string"],
+      ["javascript", "true", "keyword"],
+      ["json", '{\"ready\": true}', "string"],
+      ["sh", "# note", "comment"],
+      ["shell", "if ready; then", "keyword"],
+      ["bash", "echo 42", "number"],
+      ["html", "<main>text</main>", "keyword"],
+      ["css", "color: #fff", "keyword"],
+      ["py", "def run():", "keyword"],
+      ["python", "return None", "keyword"],
+      ["md", "# Read `this`", "string"],
+      ["markdown", "<!-- note -->", "comment"],
+    ] as const;
+
+    for (const [language, source, token] of examples) {
+      expect(renderMarkdown(`\`\`\`${language}\n${source}\n\`\`\``)).toContain(
+        `class="syntax-${token}"`,
+      );
+    }
+  });
+
+  test("keeps comment markers inside strings and shell parameters", () => {
+    const javascript = renderMarkdown(
+      '```js\nconst url = "https://example.com"; /* "one comment" */\n```',
+    );
+    expect(javascript.match(/class="syntax-string"/g)).toHaveLength(1);
+    expect(javascript.match(/class="syntax-comment"/g)).toHaveLength(1);
+
+    const shell = renderMarkdown("```sh\necho $# # one comment\n```");
+    expect(shell.match(/class="syntax-comment"/g)).toHaveLength(1);
+  });
+
+  test("leaves unknown and untagged code blocks unchanged", () => {
+    const plain = "<pre><code>const x = &quot;&lt;x&gt;&quot;;</code></pre>";
+    expect(renderMarkdown('```\nconst x = "<x>";\n```')).toBe(plain);
+    expect(renderMarkdown('```rust\nconst x = "<x>";\n```')).toBe(plain);
+  });
+
+  test("keeps HTML, quotes, and angle brackets literal after highlighting", () => {
+    const source = `const html = "<img src='x'>"; // <script>alert(1)</script>`;
+    const rendered = renderMarkdown(`\`\`\`ts\n${source}\n\`\`\``);
+    const window = new Window();
+    window.document.body.innerHTML = rendered;
+    const code = window.document.querySelector("code")!;
+
+    expect(code.querySelector("img")).toBeNull();
+    expect(code.querySelector("script")).toBeNull();
+    expect(code.textContent).toBe(source);
+  });
+
+  test("highlights about 200 lines quickly", () => {
+    const source = Array.from(
+      { length: 200 },
+      (_, index) => `const item${index}: string = "<value>"; // line ${index}`,
+    ).join("\n");
+    const started = performance.now();
+    const rendered = renderMarkdown(`\`\`\`ts\n${source}\n\`\`\``);
+
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(rendered.match(/class="syntax-comment"/g)).toHaveLength(200);
+  });
+
+  test("keeps a highlighted block anchorable and preserves copied text", () => {
+    const source = 'const value = "copy me";';
+    const window = new Window();
+    window.document.body.innerHTML = renderMarkdown(`\`\`\`ts\n${source}\n\`\`\``);
+    const pre = window.document.querySelector("pre")! as unknown as HTMLElement;
+    const token = pre.querySelector("span")! as unknown as EventTarget;
+
+    expect(window.document.querySelectorAll("pre")).toHaveLength(1);
+    expect(stampTarget(window.document.body as unknown as HTMLElement, token)).toBe(pre);
+    expect(pre.textContent).toBe(source);
+  });
+
+  test("keeps every syntax color above 4.5 to 1 contrast in both themes", async () => {
+    const css = await Bun.file(new URL("../public/overlay.css", import.meta.url)).text();
+    const dark = css.match(/html,\s*html\[data-theme="dark"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    const light = css.match(/html\[data-theme="light"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    for (const rules of [dark, light]) {
+      const background = cssVariable(rules, "document-code-background");
+      expect(background).not.toBe("");
+      for (const token of SYNTAX_TOKENS) {
+        const color = cssVariable(rules, `document-syntax-${token}`);
+        expect(contrast(color, background)).toBeGreaterThanOrEqual(4.5);
+        expect(css).toContain(`.syntax-${token} { color: var(--document-syntax-${token}); }`);
+      }
+    }
   });
 
   test("renders inline code and emphasis", () => {

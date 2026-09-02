@@ -52,6 +52,12 @@ html[data-theme="dark"] {
   --peanut-muted: #a4abba;
   --peanut-line: #2a3140;
   --peanut-surface: #171c25;
+  --document-code-background: #10141b;
+  --document-syntax-keyword: #ff9db0;
+  --document-syntax-string: #a8d68d;
+  --document-syntax-number: #c6b8ff;
+  --document-syntax-comment: #9fa8ba;
+  --document-syntax-punctuation: #c7cbd3;
   --peanut-on-accent: #e6e9ef;
   --peanut-shadow: rgba(0, 0, 0, 0.36);
   --peanut-pin-background: color-mix(in srgb, #0d1b2a 35%, transparent);
@@ -65,6 +71,12 @@ html[data-theme="light"] {
   --peanut-muted: #364357;
   --peanut-line: #d5dae3;
   --peanut-surface: #fff;
+  --document-code-background: #f3f5f8;
+  --document-syntax-keyword: #8b1e3f;
+  --document-syntax-string: #28681f;
+  --document-syntax-number: #553c9a;
+  --document-syntax-comment: #5c6470;
+  --document-syntax-punctuation: #434956;
   --peanut-on-accent: #fff;
   --peanut-shadow: rgba(16, 20, 27, 0.12);
   --peanut-pin-background: color-mix(in srgb, #0d1b2a 14%, transparent);
@@ -90,6 +102,14 @@ body.plan > img {
   display: block;
   margin: 1.5em auto;
 }
+
+body.plan pre { background: var(--document-code-background); }
+
+body.plan .syntax-keyword { color: var(--document-syntax-keyword); }
+body.plan .syntax-string { color: var(--document-syntax-string); }
+body.plan .syntax-number { color: var(--document-syntax-number); }
+body.plan .syntax-comment { color: var(--document-syntax-comment); }
+body.plan .syntax-punctuation { color: var(--document-syntax-punctuation); }
 
 /* A rendered table is one document block, so pins target the table
    instead of an individual row or cell. */
