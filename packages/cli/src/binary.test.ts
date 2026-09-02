@@ -89,6 +89,23 @@ describe("compiled binary", () => {
       );
       expect((await font.bytes()).length).toBeGreaterThan(1000);
     }
+    const assets = [
+      ["/icon.svg", "image/svg+xml"],
+      ["/favicon.ico", "image/x-icon"],
+      ["/apple-touch-icon.png", "image/png"],
+      ["/icon-192.png", "image/png"],
+      ["/icon-512.png", "image/png"],
+      ["/icon-mask.png", "image/png"],
+      ["/manifest.webmanifest", "application/manifest+json"],
+    ] as const;
+    for (const [path, contentType] of assets) {
+      const asset = await fetch(`${session.server}${path}`);
+      expect(asset.ok).toBe(true);
+      expect(asset.headers.get("content-type")).toBe(contentType);
+      expect(await asset.bytes()).toEqual(
+        await Bun.file(join(ROOT, "packages/web/public", path.slice(1))).bytes(),
+      );
+    }
     const notice = await Bun.file(NOTICE).text();
     expect(notice).toContain("Copyright 2025 The Google Sans Project Authors");
     expect(notice).toContain("SIL OPEN FONT LICENSE Version 1.1");

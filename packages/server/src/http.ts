@@ -22,6 +22,15 @@ const FONT_PATHS = new Set([
   "/fonts/google-sans-italic.woff2",
   "/fonts/google-sans-italic-latin-ext.woff2",
 ]);
+const ICON_PATHS = new Set([
+  "/icon.svg",
+  "/favicon.ico",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-mask.png",
+  "/manifest.webmanifest",
+]);
 
 interface RelayData {
   roomId: string;
@@ -351,6 +360,24 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     });
   }
 
+  if (request.method === "GET" && ICON_PATHS.has(path)) {
+    const asset = embeddedAssets?.icons[path] ?? Bun.file(webPath(`public${path}`));
+    const contentType =
+      path === "/icon.svg"
+        ? "image/svg+xml"
+        : path === "/favicon.ico"
+          ? "image/x-icon"
+          : path === "/manifest.webmanifest"
+            ? "application/manifest+json"
+            : "image/png";
+    return new Response(asset, {
+      headers: {
+        "content-type": contentType,
+        "cache-control": "public, max-age=31536000, immutable",
+      },
+    });
+  }
+
   // A room link is /<roomId>. The shell is served for every id; the
   // client shows "room not found" when the state fetch says so.
   if (request.method === "GET" && /^\/[A-Za-z0-9]+$/.test(path)) {
@@ -377,6 +404,7 @@ export interface WebAssets {
   overlayJs: string;
   overlayCss: string;
   fonts: Record<string, Blob>;
+  icons: Record<string, Blob>;
 }
 
 let embeddedAssets: WebAssets | null = null;

@@ -26,6 +26,10 @@ describe("web shell", () => {
     expect(body).toContain("unicode-range:");
     expect(body).not.toContain("google-sans-400.woff2");
     expect(body).not.toContain("fonts.googleapis.com");
+    expect(body).toContain('<link rel="icon" href="/favicon.ico" sizes="32x32">');
+    expect(body).toContain('<link rel="icon" href="/icon.svg" type="image/svg+xml">');
+    expect(body).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
+    expect(body).toContain('<link rel="manifest" href="/manifest.webmanifest">');
   });
 
   test("the client bundle is served as javascript", async () => {
@@ -53,6 +57,45 @@ describe("web shell", () => {
       );
       expect(new TextDecoder().decode((await response.bytes()).slice(0, 4))).toBe("wOF2");
     }
+  });
+
+  test("web app icons are served with their declared content types", async () => {
+    const assets = [
+      ["/icon.svg", "image/svg+xml"],
+      ["/favicon.ico", "image/x-icon"],
+      ["/apple-touch-icon.png", "image/png"],
+      ["/icon-192.png", "image/png"],
+      ["/icon-512.png", "image/png"],
+      ["/icon-mask.png", "image/png"],
+    ] as const;
+    for (const [path, contentType] of assets) {
+      const response = await fetch(`${server.url}${path}`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe(contentType);
+      expect((await response.bytes()).length).toBeGreaterThan(100);
+    }
+  });
+
+  test("the web app manifest lists the Peanut icons", async () => {
+    const response = await fetch(`${server.url}/manifest.webmanifest`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/manifest+json");
+    const manifest = await response.json();
+    expect(manifest).toMatchObject({
+      name: "Peanut",
+      background_color: "#0d1b2a",
+      theme_color: "#0d1b2a",
+    });
+    expect(manifest.icons).toEqual([
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      {
+        src: "/icon-mask.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ]);
   });
 
   test("api paths never fall through to the shell", async () => {
