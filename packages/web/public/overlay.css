@@ -81,6 +81,16 @@ body.plan table {
   border-radius: 8px;
 }
 
+body.plan img {
+  max-width: 100%;
+  height: auto;
+}
+
+body.plan > img {
+  display: block;
+  margin: 1.5em auto;
+}
+
 /* A rendered table is one document block, so pins target the table
    instead of an individual row or cell. */
 body.plan table * { pointer-events: none; }
