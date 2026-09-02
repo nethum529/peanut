@@ -123,10 +123,13 @@ describe("peanut cli", () => {
     expect(output).toContain(":root");
     expect(output).toContain("Diagram embed");
     expect(output).toContain("<svg");
+    expect(output).toContain("Open question block");
+    expect(output).toContain('data-peanut-question="session-storage"');
     for (const buildingBlock of [
       "section",
       "card",
       "decision row",
+      "question block",
       "comparison table",
       "annotated code",
       "callout",
@@ -148,10 +151,12 @@ describe("peanut cli", () => {
     const reference = JSON.parse(output) as {
       css: string;
       diagram: string;
+      question: string;
       buildingBlocks: Array<{ name: string }>;
     };
     expect(plain).toContain(reference.css);
     expect(plain).toContain(reference.diagram);
+    expect(plain).toContain(reference.question);
     for (const block of reference.buildingBlocks) {
       expect(plain).toContain(block.name);
     }
@@ -159,6 +164,7 @@ describe("peanut cli", () => {
       "section",
       "card",
       "decision row",
+      "question block",
       "comparison table",
       "annotated code",
       "callout",

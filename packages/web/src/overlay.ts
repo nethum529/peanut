@@ -8,6 +8,7 @@ import {
 } from "./anchors.ts";
 import {
   isChromeToOverlayMessage,
+  isQuestionKey,
   type ChromeToOverlayMessage,
   type OverlayCursor,
   type OverlayInstruction,
@@ -25,6 +26,12 @@ export interface OverlayRuntime {
   receive(event: MessageEvent): void;
   destroy(): void;
 }
+
+interface PeanutDocumentApi {
+  answer(questionKey: unknown, answer: unknown): boolean;
+}
+
+type PeanutDocumentWindow = Window & { peanut?: PeanutDocumentApi };
 
 function parentOrigin(document: Document): string {
   for (const candidate of [document.referrer, document.baseURI]) {
@@ -97,6 +104,85 @@ export function createOverlayRuntime(
   const send = (message: OverlayToChromeMessage): void => {
     if (expectedParentOrigin) host.postMessage(message, expectedParentOrigin);
   };
+
+  const findQuestionBlock = (questionKey: string): HTMLElement | null => {
+    const matches = [...root.querySelectorAll<HTMLElement>("[data-peanut-question]")].filter(
+      (candidate) => candidate.dataset.peanutQuestion === questionKey,
+    );
+    return matches.length === 1 ? matches[0]! : null;
+  };
+
+  const answerStatus = (block: HTMLElement): HTMLElement | null =>
+    block.querySelector<HTMLElement>("[data-peanut-answer-status]");
+
+  const setAnswerStatus = (
+    block: HTMLElement,
+    status: "error" | "sending" | "sent",
+    words: string,
+  ): boolean => {
+    const output = answerStatus(block);
+    if (!output) return false;
+    output.dataset.state = status;
+    output.textContent = words;
+    return true;
+  };
+
+  let apiActive = true;
+  const api: PeanutDocumentApi = Object.freeze({
+    answer(questionKey: unknown, answer: unknown): boolean {
+      if (!apiActive || !isQuestionKey(questionKey)) return false;
+      const block = findQuestionBlock(questionKey);
+      if (!block || !answerStatus(block)) return false;
+      if (state.ended) {
+        setAnswerStatus(block, "error", "This review has ended.");
+        return false;
+      }
+      if (!state.participants.some((participant) => participant.you)) {
+        setAnswerStatus(block, "error", "Review controls are not ready.");
+        return false;
+      }
+      if (typeof answer !== "string" || !answer.trim()) {
+        setAnswerStatus(block, "error", "Write an answer before sending.");
+        return false;
+      }
+      const question = (block.querySelector("legend")?.textContent ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const chosen = answer.replace(/\s+/g, " ").trim();
+      if (!question || question.length > 800 || chosen.length > 1000) {
+        setAnswerStatus(block, "error", "The question or answer is too long.");
+        return false;
+      }
+      const selector = selectorFor(block, root);
+      const words = `Question: ${question}\nAnswer: ${chosen}`;
+      if (!selector || words.length > 2000) {
+        setAnswerStatus(block, "error", "This question cannot be sent.");
+        return false;
+      }
+      const anchor: StampAnchor = { type: "stamp", selector, guard: question.slice(0, 80) };
+      setAnswerStatus(block, "sending", "Sending answer...");
+      send({
+        type: "pin",
+        words,
+        anchor,
+        questionKey,
+      });
+      return true;
+    },
+  });
+  const documentView = view as PeanutDocumentWindow;
+  let apiInstalled = false;
+  try {
+    Object.defineProperty(documentView, "peanut", {
+      configurable: true,
+      enumerable: true,
+      value: api,
+      writable: false,
+    });
+    apiInstalled = true;
+  } catch {
+    apiActive = false;
+  }
 
   const setDraftActive = (active: boolean): void => {
     if (draftActive === active) return;
@@ -378,7 +464,15 @@ export function createOverlayRuntime(
   };
 
   const onClick = (event: MouseEvent): void => {
-    if ((event.target as Element | null)?.closest?.(".peanut-overlay")) return;
+    const clicked = event.target as Element | null;
+    if (clicked?.closest?.(".peanut-overlay")) return;
+    if (
+      clicked?.closest?.("[data-peanut-question]") &&
+      clicked.closest("input, button, label, textarea, select")
+    ) {
+      closeFloating();
+      return;
+    }
     closeFloating();
     if (state.ended) return;
     const target = stampTarget(root, event.target);
@@ -407,6 +501,45 @@ export function createOverlayRuntime(
 
   const onPointerLeave = (): void => send({ type: "cursor-leave" });
 
+  const selectedAnswer = (block: HTMLElement): { answer: string; label: string } => {
+    const selected = block.querySelector<HTMLInputElement>('input[type="radio"]:checked');
+    if (!selected) return { answer: "", label: "No option" };
+    if (selected.hasAttribute("data-peanut-write-own")) {
+      const own = block.querySelector<HTMLInputElement>("[data-peanut-own-answer]");
+      const answer = own?.value.trim() ?? "";
+      return { answer, label: answer || "Write my own" };
+    }
+    const answer = selected.value.trim();
+    return { answer, label: answer || "No option" };
+  };
+
+  const showSelection = (block: HTMLElement): void => {
+    const output = block.querySelector<HTMLElement>("[data-peanut-selection-status]");
+    if (output) output.textContent = `Selected: ${selectedAnswer(block).label}`;
+  };
+
+  const onQuestionChange = (event: Event): void => {
+    const changed = event.target as Element | null;
+    const block = changed?.closest?.<HTMLElement>("[data-peanut-question]");
+    if (block && changed?.matches('input[type="radio"]')) showSelection(block);
+  };
+
+  const onQuestionInput = (event: Event): void => {
+    const changed = event.target as Element | null;
+    const block = changed?.closest?.<HTMLElement>("[data-peanut-question]");
+    if (block && changed?.matches("[data-peanut-own-answer]")) showSelection(block);
+  };
+
+  const onQuestionSubmit = (event: SubmitEvent): void => {
+    const block = (event.target as Element | null)?.closest?.<HTMLElement>(
+      "[data-peanut-question]",
+    );
+    if (!block) return;
+    event.preventDefault();
+    event.stopPropagation();
+    api.answer(block.dataset.peanutQuestion, selectedAnswer(block).answer);
+  };
+
   const receive = (event: MessageEvent): void => {
     if (event.source !== host || event.origin !== expectedParentOrigin) return;
     if (!isChromeToOverlayMessage(event.data)) return;
@@ -426,6 +559,12 @@ export function createOverlayRuntime(
       document.documentElement.dataset.theme = message.theme;
     } else if (message.type === "new-version") {
       showNewVersionBanner();
+    } else if (message.type === "answer-result") {
+      const block = findQuestionBlock(message.questionKey);
+      if (block) {
+        if (message.ok) setAnswerStatus(block, "sent", `Sent: ${message.answer}`);
+        else setAnswerStatus(block, "error", message.error);
+      }
     } else {
       send({ type: "snapshot", requestId: message.requestId, html: snapshotHtml() });
     }
@@ -435,6 +574,9 @@ export function createOverlayRuntime(
   root.addEventListener("mouseover", onMouseOver);
   root.addEventListener("mouseleave", onMouseLeave);
   root.addEventListener("click", onClick);
+  root.addEventListener("change", onQuestionChange);
+  root.addEventListener("input", onQuestionInput);
+  root.addEventListener("submit", onQuestionSubmit);
   root.addEventListener("pointermove", onPointerMove);
   root.addEventListener("pointerleave", onPointerLeave);
   send({ type: "ready" });
@@ -446,6 +588,9 @@ export function createOverlayRuntime(
       root.removeEventListener("mouseover", onMouseOver);
       root.removeEventListener("mouseleave", onMouseLeave);
       root.removeEventListener("click", onClick);
+      root.removeEventListener("change", onQuestionChange);
+      root.removeEventListener("input", onQuestionInput);
+      root.removeEventListener("submit", onQuestionSubmit);
       root.removeEventListener("pointermove", onPointerMove);
       root.removeEventListener("pointerleave", onPointerLeave);
       clearHover();
@@ -453,6 +598,8 @@ export function createOverlayRuntime(
       clearMarks();
       root.querySelector(".peanut-cursor-layer")?.remove();
       cursorNodes.clear();
+      apiActive = false;
+      if (apiInstalled && documentView.peanut === api) delete documentView.peanut;
       if (positionedBody) root.style.position = originalBodyPosition;
     },
   };

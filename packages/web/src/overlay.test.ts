@@ -28,6 +28,26 @@ function receive(data: unknown, origin = "http://chrome.test", source: unknown =
   runtime.receive({ data, origin, source } as MessageEvent);
 }
 
+function questionDocument(): HTMLFormElement {
+  document.body.innerHTML = `<main>
+    <form class="question-block" data-peanut-question="storage">
+      <fieldset>
+        <legend>Where should sessions be stored?</legend>
+        <label><input type="radio" name="storage" value="Temporary files" checked> Temporary files</label>
+        <label><input type="radio" name="storage" value="Memory only"> Memory only</label>
+        <label><input type="radio" name="storage" value="own" data-peanut-write-own> Write my own</label>
+        <input data-peanut-own-answer aria-label="My answer">
+        <p data-peanut-selection-status>Selected: Temporary files</p>
+        <button type="submit">Send answer</button>
+        <p data-peanut-answer-status data-state="idle">Not sent.</p>
+      </fieldset>
+    </form>
+  </main>`;
+  receive(state());
+  sent = [];
+  return document.querySelector("form") as HTMLFormElement;
+}
+
 beforeEach(() => {
   win = new HappyWindow({ url: "http://frame.test/api/rooms/room/document" });
   document = win.document as unknown as Document;
@@ -53,6 +73,73 @@ afterEach(() => {
 });
 
 describe("document overlay", () => {
+  test("an open question submits one anchored answer and shows when it was sent", () => {
+    const form = questionDocument();
+    expect(Object.keys((win as unknown as { peanut: object }).peanut)).toEqual(["answer"]);
+
+    form.dispatchEvent(
+      new win.Event("submit", { bubbles: true, cancelable: true }) as unknown as Event,
+    );
+
+    expect(sent.map((entry) => entry.message)).toEqual([
+      {
+        type: "pin",
+        words: "Question: Where should sessions be stored?\nAnswer: Temporary files",
+        anchor: {
+          type: "stamp",
+          selector: "main > form",
+          guard: "Where should sessions be stored?",
+        },
+        questionKey: "storage",
+      },
+    ]);
+    expect(document.querySelector("[data-peanut-selection-status]")?.textContent).toBe(
+      "Selected: Temporary files",
+    );
+    expect(document.querySelector("[data-peanut-answer-status]")?.textContent).toBe(
+      "Sending answer...",
+    );
+
+    receive({ type: "answer-result", questionKey: "storage", ok: true, answer: "Temporary files" });
+    expect(document.querySelector("[data-peanut-answer-status]")?.textContent).toBe(
+      "Sent: Temporary files",
+    );
+    expect(document.querySelector("[data-peanut-answer-status]")?.getAttribute("data-state")).toBe(
+      "sent",
+    );
+  });
+
+  test("changing a question radio updates local selection without sending", () => {
+    questionDocument();
+    const second = document.querySelector<HTMLInputElement>('input[value="Memory only"]')!;
+    second.checked = true;
+    second.dispatchEvent(new win.Event("change", { bubbles: true }) as unknown as Event);
+
+    expect(sent).toHaveLength(0);
+    expect(document.querySelector("[data-peanut-selection-status]")?.textContent).toBe(
+      "Selected: Memory only",
+    );
+    expect(document.querySelector("[data-peanut-answer-status]")?.textContent).toBe("Not sent.");
+  });
+
+  test("an empty custom question answer is refused in its block", () => {
+    const form = questionDocument();
+    const custom = document.querySelector<HTMLInputElement>("[data-peanut-write-own]")!;
+    custom.checked = true;
+    custom.dispatchEvent(new win.Event("change", { bubbles: true }) as unknown as Event);
+    form.dispatchEvent(
+      new win.Event("submit", { bubbles: true, cancelable: true }) as unknown as Event,
+    );
+
+    expect(sent).toHaveLength(0);
+    expect(document.querySelector("[data-peanut-answer-status]")?.textContent).toBe(
+      "Write an answer before sending.",
+    );
+    expect(document.querySelector("[data-peanut-answer-status]")?.getAttribute("data-state")).toBe(
+      "error",
+    );
+  });
+
   test("keeps the T-44 popover styling in the document stylesheet", async () => {
     const css = await Bun.file(new URL("../public/overlay.css", import.meta.url)).text();
     expect(css).toContain("max-width: calc(100vw - 16px)");
