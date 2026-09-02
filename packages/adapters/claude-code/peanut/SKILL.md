@@ -41,6 +41,14 @@ make the content easy to scan. Prefer these structures to long
 paragraphs. Choose the type, spacing, and colour on purpose so that the
 document has a clear hierarchy and supports its content.
 
+Lead with a diagram when explaining how something works, how data or
+control moves, or the order of a plan. Use one for a flow, a step
+sequence, components that communicate, or a before and after. Use prose
+only for reasoning, trade-offs, and open questions the diagram cannot
+show. Skip it for a flat list of facts, a single decision, or a short
+note. Keep one idea and about 7 nodes at most. Split a larger diagram
+in two.
+
 Render each open decision as a question block that reviewers can answer.
 Keep settled decisions as static decision rows with their outcomes.
 
