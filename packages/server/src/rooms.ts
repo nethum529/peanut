@@ -38,6 +38,7 @@ export interface Room {
   id: string;
   title: string;
   content: string;
+  documentDirectory?: string;
   contentVersion: number;
   contentType: ContentType;
   createdAt: number;
@@ -138,6 +139,7 @@ export class RoomStore {
   createRoom(input: {
     title: string;
     content: string;
+    documentDirectory?: string;
     contentType?: ContentType;
     hostName?: string;
   }): {
@@ -148,6 +150,7 @@ export class RoomStore {
       id: randomId(),
       title: input.title.trim() || "Review",
       content: input.content,
+      ...(input.documentDirectory ? { documentDirectory: input.documentDirectory } : {}),
       contentVersion: 1,
       contentType: input.contentType ?? "markdown",
       createdAt: Date.now(),

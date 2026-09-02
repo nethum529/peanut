@@ -1,3 +1,5 @@
+import { realpath, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { parseAnchor } from "./anchors.ts";
 import { renderMarkdown } from "../../web/src/markdown.ts";
 import {
@@ -30,6 +32,15 @@ const ICON_PATHS = new Set([
   "/icon-512.png",
   "/icon-mask.png",
   "/manifest.webmanifest",
+]);
+const ASSET_CONTENT_TYPES = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+  [".svg", "image/svg+xml"],
+  [".avif", "image/avif"],
 ]);
 
 interface RelayData {
@@ -133,6 +144,7 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
       const { room } = store.createRoom({
         title: stringField(body, "title"),
         content: stringField(body, "content"),
+        documentDirectory: stringField(body, "documentDirectory") || undefined,
         contentType,
       });
       return json({ roomId: room.id, agentToken: room.agentToken }, 201);
@@ -140,6 +152,7 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     const { room, host } = store.createRoom({
       title: stringField(body, "title"),
       content: stringField(body, "content"),
+      documentDirectory: stringField(body, "documentDirectory") || undefined,
       contentType,
       hostName: stringField(body, "hostName") || "Host",
     });
@@ -333,6 +346,14 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
     return json({ ended: true });
   }
 
+  const assetMatch = path.match(/^\/api\/rooms\/([^/]+)\/(.+)$/);
+  if (request.method === "GET" && assetMatch) {
+    const roomId = assetMatch[1]!;
+    // The sandboxed document has an opaque origin and sends no room cookie.
+    // The unguessable room id still scopes assets to one document directory.
+    return roomAsset(store.getRoom(roomId), assetMatch[2]!);
+  }
+
   if (request.method === "GET" && path === "/app.js") {
     return appScript();
   }
@@ -390,6 +411,60 @@ async function route(request: Request, store: RoomStore): Promise<Response> {
   }
 
   return json({ error: "not_found" }, 404);
+}
+
+async function roomAsset(room: Room, encodedPath: string): Promise<Response> {
+  const notFound = () => json({ error: "not_found" }, 404);
+  if (!room.documentDirectory) return notFound();
+
+  let requestedPath: string;
+  try {
+    requestedPath = decodeURIComponent(encodedPath);
+  } catch {
+    return notFound();
+  }
+  if (
+    requestedPath.includes("\0") ||
+    isAbsolute(requestedPath) ||
+    win32.isAbsolute(requestedPath)
+  ) {
+    return notFound();
+  }
+
+  if (!ASSET_CONTENT_TYPES.has(extname(requestedPath).toLowerCase())) return notFound();
+
+  let assetPath: string;
+  let contentType: string;
+  try {
+    const documentDirectory = await realpath(room.documentDirectory);
+    assetPath = await realpath(resolve(documentDirectory, requestedPath));
+    const resolvedContentType = ASSET_CONTENT_TYPES.get(extname(assetPath).toLowerCase());
+    if (!resolvedContentType) return notFound();
+    contentType = resolvedContentType;
+    const pathFromDocument = relative(documentDirectory, assetPath);
+    if (
+      pathFromDocument === "" ||
+      pathFromDocument === ".." ||
+      pathFromDocument.startsWith(`..${sep}`) ||
+      isAbsolute(pathFromDocument) ||
+      !(await stat(assetPath)).isFile()
+    ) {
+      return notFound();
+    }
+  } catch {
+    return notFound();
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  };
+  if (contentType === "image/svg+xml") {
+    // SVG stays usable as an image. This sandbox stops it from running as a page.
+    headers["content-security-policy"] = "sandbox; default-src 'none'";
+  }
+  return new Response(Bun.file(assetPath), { headers });
 }
 
 function webPath(relative: string): string {

@@ -407,6 +407,7 @@ async function share(flags: Flags): Promise<never> {
       title: flags.named.get("title") ?? filePath,
       content,
       contentType,
+      documentDirectory: dirname(resolve(filePath)),
       hostless: true,
     }),
   });

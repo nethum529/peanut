@@ -49,13 +49,32 @@ async function waitForSession(): Promise<SessionFile> {
 
 describe("compiled binary", () => {
   test("share serves the room from embedded assets over a re-execed server", async () => {
-    await Bun.write(join(dir, "plan.md"), "# Plan\n\nShip it.\n");
-    const proc = Bun.spawn([BINARY, "share", "plan.md", "--session", SESSION], {
+    await Bun.write(
+      join(dir, "plan.html"),
+      '<!doctype html><html><body><h1>Plan</h1><img src="shot.png"></body></html>',
+    );
+    await Bun.write(join(dir, "shot.png"), new Uint8Array([1, 2, 3]));
+    const proc = Bun.spawn([BINARY, "share", "plan.html", "--session", SESSION], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
     });
     const session = await waitForSession();
+
+    const joined = await fetch(`${session.server}/api/rooms/${session.roomId}/join`, {
+      method: "POST",
+      body: JSON.stringify({ claimHost: true }),
+    });
+    expect(joined.ok).toBe(true);
+    const cookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const document = await fetch(`${session.server}/api/rooms/${session.roomId}/document`, {
+      headers: { cookie },
+    });
+    expect(await document.text()).toContain('<img src="shot.png">');
+    const documentAsset = await fetch(`${session.server}/api/rooms/${session.roomId}/shot.png`);
+    expect(documentAsset.headers.get("content-type")).toBe("image/png");
+    expect(documentAsset.headers.get("cache-control")).toBe("no-store");
+    expect(await documentAsset.bytes()).toEqual(new Uint8Array([1, 2, 3]));
 
     // The page and the client script come from the embedded assets;
     // there are no web sources next to the binary or the cwd.
