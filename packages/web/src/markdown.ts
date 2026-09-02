@@ -127,6 +127,97 @@ function tableCell(tag: "th" | "td", text: string, alignment: TableAlignment): s
   return `<${tag}${style}>${renderInline(text)}</${tag}>`;
 }
 
+type ListKind = "ul" | "ol";
+
+interface ListLine {
+  kind: ListKind;
+  level: number;
+  number: number;
+  text: string;
+}
+
+function horizontalRule(line: string): boolean {
+  return /^[ \t]*(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
+}
+
+function indentLevel(indent: string): number {
+  let level = 0;
+  let spaces = 0;
+  for (const character of indent) {
+    if (character === "\t") {
+      level += Math.floor(spaces / 2) + 1;
+      spaces = 0;
+    } else {
+      spaces += 1;
+    }
+  }
+  return level + Math.floor(spaces / 2);
+}
+
+function parseListLine(line: string): ListLine | null {
+  if (horizontalRule(line)) return null;
+  const match = line.match(/^([ \t]*)([-*]|(\d+)[.)])\s+(.*)$/);
+  if (!match) return null;
+  return {
+    kind: match[3] === undefined ? "ul" : "ol",
+    level: indentLevel(match[1]!),
+    number: match[3] === undefined ? 1 : Number(match[3]),
+    text: match[4]!,
+  };
+}
+
+function listItemContent(item: ListLine): string {
+  const task = item.kind === "ul" ? item.text.match(/^\[([ xX])\]\s+(.*)$/) : null;
+  if (!task) return renderInline(item.text);
+  const checked = task[1]!.toLowerCase() === "x" ? " checked" : "";
+  return `<label><input type="checkbox" disabled${checked}> ${renderInline(task[2]!)}</label>`;
+}
+
+function renderList(lines: string[], start: number): { html: string; next: number } | null {
+  const first = parseListLine(lines[start] ?? "");
+  if (!first) return null;
+
+  const items: ListLine[] = [];
+  const baseLevel = first.level;
+  let next = start;
+  while (next < lines.length) {
+    const item = parseListLine(lines[next]!);
+    if (!item) break;
+    const relativeLevel = Math.max(0, item.level - baseLevel);
+    const previousLevel = items.at(-1)?.level ?? 0;
+    item.level = Math.min(relativeLevel, previousLevel + 1);
+    items.push(item);
+    next += 1;
+  }
+
+  let cursor = 0;
+  const renderLevel = (level: number, kind: ListKind): string => {
+    const firstItem = items[cursor]!;
+    const startAttribute = kind === "ol" && firstItem.number !== 1 ? ` start="${firstItem.number}"` : "";
+    let html = `<${kind}${startAttribute}>`;
+    let expectedNumber = firstItem.number;
+
+    while (cursor < items.length) {
+      const item = items[cursor]!;
+      if (item.level !== level || item.kind !== kind) break;
+      const valueAttribute = kind === "ol" && item.number !== expectedNumber ? ` value="${item.number}"` : "";
+      expectedNumber = item.number + 1;
+      html += `<li${valueAttribute}>${listItemContent(item)}`;
+      cursor += 1;
+      while (cursor < items.length && items[cursor]!.level > level) {
+        html += renderLevel(items[cursor]!.level, items[cursor]!.kind);
+      }
+      html += "</li>";
+    }
+
+    return `${html}</${kind}>`;
+  };
+
+  let html = "";
+  while (cursor < items.length) html += renderLevel(items[cursor]!.level, items[cursor]!.kind);
+  return { html, next };
+}
+
 export function renderMarkdown(source: string): string {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -169,29 +260,16 @@ export function renderMarkdown(source: string): string {
       continue;
     }
 
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    if (bullet) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = lines[index]!.match(/^\s*[-*]\s+(.*)$/);
-        if (!item) break;
-        items.push(`<li>${renderInline(item[1]!)}</li>`);
-        index += 1;
-      }
-      out.push(`<ul>${items.join("")}</ul>`);
+    if (horizontalRule(line)) {
+      out.push("<hr>");
+      index += 1;
       continue;
     }
 
-    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
-    if (ordered) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = lines[index]!.match(/^\s*\d+[.)]\s+(.*)$/);
-        if (!item) break;
-        items.push(`<li>${renderInline(item[1]!)}</li>`);
-        index += 1;
-      }
-      out.push(`<ol>${items.join("")}</ol>`);
+    const list = renderList(lines, index);
+    if (list) {
+      out.push(list.html);
+      index = list.next;
       continue;
     }
 
@@ -233,7 +311,9 @@ export function renderMarkdown(source: string): string {
     while (
       index < lines.length &&
       lines[index]!.trim() !== "" &&
-      !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+[.)]\s|>|\|)/.test(lines[index]!) &&
+      !/^(#{1,6}\s|```|>|\|)/.test(lines[index]!) &&
+      !horizontalRule(lines[index]!) &&
+      !parseListLine(lines[index]!) &&
       !blockImage(lines[index]!) &&
       !tableStart(lines, index)
     ) {
