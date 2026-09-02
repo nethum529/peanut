@@ -18,6 +18,13 @@ import googleSansItalic from "../../web/public/fonts/google-sans-italic.woff2" w
 import googleSansItalicLatinExt from "../../web/public/fonts/google-sans-italic-latin-ext.woff2" with {
   type: "file",
 };
+import iconSvg from "../../web/public/icon.svg" with { type: "file" };
+import faviconIco from "../../web/public/favicon.ico" with { type: "file" };
+import appleTouchIcon from "../../web/public/apple-touch-icon.png" with { type: "file" };
+import icon192 from "../../web/public/icon-192.png" with { type: "file" };
+import icon512 from "../../web/public/icon-512.png" with { type: "file" };
+import iconMask from "../../web/public/icon-mask.png" with { type: "file" };
+import manifest from "../../web/public/manifest.webmanifest" with { type: "file" };
 import { setEmbeddedAssets } from "../../server/src/http.ts";
 
 setEmbeddedAssets({
@@ -30,6 +37,15 @@ setEmbeddedAssets({
     "/fonts/google-sans-latin-ext.woff2": Bun.file(googleSansLatinExt),
     "/fonts/google-sans-italic.woff2": Bun.file(googleSansItalic),
     "/fonts/google-sans-italic-latin-ext.woff2": Bun.file(googleSansItalicLatinExt),
+  },
+  icons: {
+    "/icon.svg": Bun.file(iconSvg),
+    "/favicon.ico": Bun.file(faviconIco),
+    "/apple-touch-icon.png": Bun.file(appleTouchIcon),
+    "/icon-192.png": Bun.file(icon192),
+    "/icon-512.png": Bun.file(icon512),
+    "/icon-mask.png": Bun.file(iconMask),
+    "/manifest.webmanifest": Bun.file(manifest),
   },
 });
 await import("./main.ts");

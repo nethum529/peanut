@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Peanut">
+  <style>
+    .mark { fill: #0d1b2a; }
+    @media (prefers-color-scheme: dark) { .mark { fill: #e6e9ef; } }
+  </style>
+  <g class="mark">
+    <circle cx="16" cy="10" r="6.5"/>
+    <circle cx="16" cy="22" r="7.5"/>
+  </g>
+</svg>
